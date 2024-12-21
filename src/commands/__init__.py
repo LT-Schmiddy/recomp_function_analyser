@@ -1,42 +1,53 @@
 import sys, os, argparse
+from typing import Any
 
-class CommandBase:
-    cmd: str = ""
-    argparser: argparse.ArgumentParser = argparse.ArgumentParser(description="Base Arg Parser")
-    parse: bool = True
 
-    def __init__(self):
+class SubCommandBase:
+    # Class-wide variables. Used to create the sub-parser:
+    name: str = ""
+    kwargs: dict = {}
+    
+    parser: argparse.ArgumentParser
+
+    def __init__(self, parser: argparse.ArgumentParser):
+        self.parser = parser
+        self.parser.set_defaults(process_func=lambda args: self.process(args))
         self.setup_args()
-
+        
     def setup_args(self):
         pass
+
+    def process(self, args: argparse.Namespace) -> Any:
+        return None
+
+
+class ArgumentProcessor:
+    parser: argparse.ArgumentParser
+    subparsers: Any
+    subcommands: dict[str, SubCommandBase]
     
-    def run(self, args_list: list):
-        if self.parse:
-            return self.process(self.argparser.parse_args(args_list))
-        else:
-            return self.process(None)
+    def __init__(self):
+        # self.parser = argparse.ArgumentParser(prog = "rfa", description="Function Analyser for Zelda64Recomp")
+        self.parser = argparse.ArgumentParser(description="Function Analyser for Zelda64Recomp")
+        self.subparsers = self.parser.add_subparsers(required=True, dest="subcommand", title='subcommands', description='valid subcommands', help='additional help')
+        
+        self.subcommands = {}
 
-    def process(self, args: argparse.Namespace):
-        pass
+        for i in SubCommandBase.__subclasses__():
+            print(f"{i.name=}, {i.kwargs=}")
+            
+            new_parser = self.subparsers.add_parser(i.name, **i.kwargs)
+            subcommand = i(new_parser)
+            
+            self.subcommands[i.name] = subcommand
 
-
-def get_commands():
-    retVal = {}
-
-    for i in CommandBase.__subclasses__():
-        retVal[i.cmd] = i
-    
-    return retVal
-
-def get_command_desc():
-    retVal = {}
-
-    for i in CommandBase.__subclasses__():
-        retVal[i.cmd] = i.argparser.description
-    
-    return retVal
-
-
+    def process(self, cmd: list[str]) -> Any:
+        args = self.parser.parse_args(cmd)
+        print(args)
+        if hasattr(args, "process_func"):
+            return args.process_func(args)
+        
+        return None
+        
 # Importing all commands here:
-# from .project_cmd import *
+from .patching_cmds import *

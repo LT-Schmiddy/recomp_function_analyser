@@ -17,24 +17,10 @@ def init_user():
     settings.load_settings()
 
 
-def print_cmd_list():
-    for cmd, desc in commands.get_command_desc().items():
-        print(f"\t{cmd} - {desc}")
-
-
-def args_len_check():
-    if len(sys.argv) < 2:
-        util.print_error("FATAL ERROR: No command given. Valid commands are:")
-        print_cmd_list()
-
-        sys.exit(1)
-
-
 def main():
     init_user()
 
     # if no command is given:
-    args_len_check()
     project.info.attempt_load_project()
         
     if project.info.is_project:
@@ -42,18 +28,9 @@ def main():
     else:
         util.print_color("green", "-> Running without project: ")
 
-    cmd = sys.argv[1]
-    cmds = commands.get_commands()
+    cmd_parser = commands.ArgumentProcessor()
 
-    # if command is not valid:
-    if cmd not in cmds:
-        util.print_error(f"FATAL ERROR '{cmd}' is not a valid command. Valid commands are:")
-        print_cmd_list()
-        sys.exit(1)
-
-    # Initialize and execute command:
-    cmd_runner = cmds[cmd]()
-    result = cmd_runner.run(sys.argv[2:])
+    result = cmd_parser.process(sys.argv[1:])
 
     if result is None:
         util.print_color("green", "Command completed successfully!")

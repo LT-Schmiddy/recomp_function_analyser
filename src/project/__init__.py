@@ -2,8 +2,6 @@ import os, shutil, json, subprocess
 from typing import Union
 from pathlib import Path
 
-
-
 import util
 import settings
 
@@ -59,10 +57,6 @@ class ProjectInfo:
         self.config_path = current_path.joinpath(self.CONFIG_FILE_NAME)
         self.save_project_config(self.config_path)
         
-        # Copying the core cmake files:
-        shutil.copytree(settings.paths.cmake_core_dir, self.config_path.parent.joinpath(self.CMAKE_CORE_DIR_NAME))
-        
-        self.create_vcpkg_info()
         
     def attempt_load_project(self, current_path: Path = None):
         if current_path is None:
@@ -72,10 +66,6 @@ class ProjectInfo:
         if self.config_path  is not None:
             self.load_project_config(self.config_path)
         
-        self.create_vcpkg_info()
-    
-    def create_vcpkg_info(self):
-        self.vcpkg = VcpkgInstance(self.project_root.joinpath(self.config["vcpkg"]["local_path"]))
     
     def locate_project_file(self, current_path: Path = None) -> Path:
         if current_path is None:
