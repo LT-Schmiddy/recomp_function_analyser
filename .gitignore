@@ -1,6 +1,10 @@
 # Directories:
 **/__pycache__
 /.vscode
+/build
+/dist
+/test
+/test_user
 /venv
 
 # File Extensions:

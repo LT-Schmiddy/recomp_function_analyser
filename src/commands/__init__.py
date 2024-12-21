@@ -34,7 +34,6 @@ class ArgumentProcessor:
         self.subcommands = {}
 
         for i in SubCommandBase.__subclasses__():
-            print(f"{i.name=}, {i.kwargs=}")
             
             new_parser = self.subparsers.add_parser(i.name, **i.kwargs)
             subcommand = i(new_parser)
@@ -43,7 +42,6 @@ class ArgumentProcessor:
 
     def process(self, cmd: list[str]) -> Any:
         args = self.parser.parse_args(cmd)
-        print(args)
         if hasattr(args, "process_func"):
             return args.process_func(args)
         

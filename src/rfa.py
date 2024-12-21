@@ -12,7 +12,7 @@ def init_user():
     settings.paths.load_paths()
     
     if util.mkdir_if_missing(settings.paths.rfa_user_dir):
-        print(f"Created rfa user directory at '{settings.path_handler.rfa_user_dir}'.")
+        print(f"Created rfa user directory at '{settings.paths.rfa_user_dir}'.")
         
     settings.load_settings()
 

@@ -12,7 +12,11 @@ class PathHandler:
     rfa_user_settings_path: Path = None
 
     def load_paths(self):
-        self.exec_path = Path(os.path.abspath(sys.argv[0]))
+        if util.is_build_version():
+            # In case we're running a pyinstaller bundle:
+            self.exec_path = Path(sys.executable)
+        else:
+            self.exec_path = Path(os.path.abspath(sys.argv[0]))
         self.exec_dir = self.exec_path.parent
         
         # Useful for development: set a custom path for the user home from a text file
@@ -32,7 +36,7 @@ class PathHandler:
             self.rfa_user_dir = custom_user_path
             print(f"DEV: using custom user path '{custom_user_path}'")
         else:
-            self.rfa_user_dir = Path.home().joinpath(".scb")
+            self.rfa_user_dir = Path.home().joinpath(".rfa")
             
         # 
         self.rfa_user_settings_path = self.rfa_user_dir.joinpath("rfa_settings.json")
