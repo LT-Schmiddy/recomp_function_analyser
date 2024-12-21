@@ -1,0 +1,4 @@
+{
+    "COMMENT": "For development purposs -- Copy this file to '/src/py' to make scb use a in-project path as a fake user config directory.",
+    "custom_user_path": "../../test_user"
+}

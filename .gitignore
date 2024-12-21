@@ -1,3 +1,7 @@
 # Directories:
+**/__pycache__
 /.vscode
 /venv
+
+# File Extensions:
+*.pyc
