@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['src\\rfa.py'],
+    ['src/rfa.py'],
     pathex=[],
     binaries=[],
     datas=[],
