@@ -59,10 +59,10 @@ class Scanner(NodeVisitor):
             self.parent.types.add(node.names[0])
 
         def visit_Struct(self, node):
-            self.parent.structs.add(node.names[0])
+            self.parent.structs.add(node.name)
 
-        def visit_Struct(self, node):
-            self.parent.unions.add(node.names[0])
+        def visit_Union(self, node):
+            self.parent.unions.add(node.name)
 
         def visit_StructRef(self, node):
             self.visit(node.name)
@@ -75,8 +75,9 @@ class Scanner(NodeVisitor):
         for func in funcs:
             self.searchin_funcs.add(func)
 
-    def visit_FuncDef(self, node : Node):
+    def visit_FuncDef(self, node : Node): # TODO Scan params for types
         name = node.decl.name
+        is_tracked = False
         if name in self.searchin_funcs:
             for param in node.decl.type.args.params:
                 self.v_gatherSymbols.local_variables.add(param.name)
@@ -84,25 +85,41 @@ class Scanner(NodeVisitor):
             self.v_gatherSymbols.visit(node.body)
 
             self.v_gatherSymbols.local_variables.clear()
-            self.coord[name] = node.coord
+            is_tracked = True
         elif name in self.functions:
-            self.coord[name] = node.coord
+            is_tracked = True
         elif name in self.variables:
             self.variables.remove(name)
             self.functions.add(name)
 
+            is_tracked = True
+
+        if is_tracked:
+            t = node.decl.type
+            for param in t.args.params:
+                self.v_gatherSymbols.visit(param.type)
+            self.v_gatherSymbols.visit(t.type)
             self.coord[name] = node.coord
+
 
     def visit_Decl(self, node):
         name = node.name
         t = node.type
         if type(t) is FuncDecl:
         # it's a function declaration
+            is_tracked = False
             if name in self.functions:
-                self.coord[name] = node.coord
+                is_tracked = True
             elif name in self.variables:
                 self.variables.remove(name)
                 self.functions.add(name)
+                is_tracked = True
+
+            if is_tracked:
+                t = node.type
+                for param in t.args.params:
+                    self.v_gatherSymbols.visit(param.type)
+                self.v_gatherSymbols.visit(t.type)
                 self.coord[name] = node.coord
         else:
             while type(t) is PtrDecl:
@@ -151,6 +168,9 @@ funcnames = [
     'Message_Init',
 ]
 
+
+# filename = 'test/definitions.c'
+
 include_dirs = [
     'mm',
     'mm/include',
@@ -173,6 +193,8 @@ ast = parse_file(filename, use_cpp=True,
         cpp_args=cpp_flags + [
             f'-I{i}' for i in include_dirs
         ])
+
+# print(ast)
 
 v = Scanner(funcnames)
 v.exec(ast)
