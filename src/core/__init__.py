@@ -4,7 +4,6 @@ from pycparser.c_ast import *
 
 class Scanner(NodeVisitor):
     searchin_funcs = set()
-    searchin_vars = set()
 
     # Symbols
     functions = set()
@@ -25,7 +24,7 @@ class Scanner(NodeVisitor):
 
         def visit_FuncCall(self, node):
             name : Node = node.name
-            if type(name) is ID:
+            if isinstance(name, ID):
                 self.parent.functions.add(name.name)
             else:
                 self.visit(name)
@@ -38,7 +37,6 @@ class Scanner(NodeVisitor):
             name : str = node.name
             if name not in self.local_variables:
                 self.parent.variables.add(name)
-                self.parent.searchin_vars.add(name)
 
         def visit_Compound(self, node):
             prev_level_variables = self.current_level_variables
@@ -75,7 +73,7 @@ class Scanner(NodeVisitor):
         for func in funcs:
             self.searchin_funcs.add(func)
 
-    def visit_FuncDef(self, node : Node): # TODO Scan params for types
+    def visit_FuncDef(self, node : Node):
         name = node.decl.name
         is_tracked = False
         if name in self.searchin_funcs:
@@ -105,8 +103,8 @@ class Scanner(NodeVisitor):
     def visit_Decl(self, node):
         name = node.name
         t = node.type
-        if type(t) is FuncDecl:
-        # it's a function declaration
+        if isinstance(t, FuncDecl):
+        # function declaration
             is_tracked = False
             if name in self.functions:
                 is_tracked = True
@@ -122,27 +120,27 @@ class Scanner(NodeVisitor):
                 self.v_gatherSymbols.visit(t.type)
                 self.coord[name] = node.coord
         else:
-            while type(t) is PtrDecl:
+            while isinstance(t, PtrDecl):
                 t = t.type
-            if type(t) is Struct:
-            # it's a struct
+            if isinstance(t, Struct):
+            # struct declaration
                 if name in self.structs:
                     self.coord[name] = node.coord
                     self.v_gatherSymbols.visit(node.type)
-            elif type(t) is Union:
-            # it's an union
+            elif isinstance(t, Union):
+            # union declaration
                 if name in self.unions:
                     self.coord[name] = node.coord
                     self.v_gatherSymbols.visit(node.type)
             else:
                 t = t.type
-                if type(t) is IdentifierType:
-                # it's a variable declaration
+                if isinstance(t, IdentifierType):
+                # variable declaration
                     if name in self.variables:
                         self.coord[name] = node.coord
                         self.v_gatherSymbols.visit(node.type)
-                elif type(t) is Enum:
-                # it's an enum
+                elif isinstance(t, Enum):
+                # enum declaration
                     for enumerator in t.values.enumerators:
                         name = enumerator.name
                         if name in self.variables:
@@ -161,50 +159,45 @@ class Scanner(NodeVisitor):
         for c in reversed([i for i in node]):
             self.visit(c)
 
+if __name__ == '__main__':
+    filename = 'mm/src/code/z_message.c'
+    funcnames = [
+        'Message_OpenText',
+        'Message_Init',
+    ]
 
-filename = 'mm/src/code/z_message.c'
-funcnames = [
-    'Message_OpenText',
-    'Message_Init',
-]
+    include_dirs = [
+        'mm',
+        'mm/include',
+        'mm/src',
+        'mm/assets'
+    ]
 
+    cpp_flags = [
+        '-U__GNUC__',
+        '-nostdinc',
+        '-E',
+        '-D_LANGUAGE_C',
+        '-DMIPS',
+    ]
 
-# filename = 'test/definitions.c'
+    # Attempting Analysis:
+    clang_path = shutil.which("clang")
+    ast = parse_file(filename, use_cpp=True,
+            cpp_path=clang_path,
+            cpp_args=cpp_flags + [
+                f'-I{i}' for i in include_dirs
+            ])
 
-include_dirs = [
-    'mm',
-    'mm/include',
-    'mm/src',
-    'mm/assets'
-]
+    v = Scanner(funcnames)
+    v.exec(ast)
 
-cpp_flags = [
-    '-U__GNUC__',
-    '-nostdinc',
-    '-E',
-    '-D_LANGUAGE_C',
-    '-DMIPS',
-]
+    coord = v.coord
+    for t in v.types:
+        print('(type) %s\nat %s\n' % (t, coord[t] if t in coord else 'UNKNOWN'))
 
-# Attempting Analysis:
-clang_path = shutil.which("clang")
-ast = parse_file(filename, use_cpp=True,
-        cpp_path=clang_path,
-        cpp_args=cpp_flags + [
-            f'-I{i}' for i in include_dirs
-        ])
+    for var in v.variables:
+        print('(variable) %s\nat %s\n' % (var, coord[var] if var in coord else 'UNKNOWN'))
 
-# print(ast)
-
-v = Scanner(funcnames)
-v.exec(ast)
-
-coord = v.coord
-for t in v.types:
-    print('(type) %s\nat %s\n' % (t, coord[t] if t in coord else 'UNKNOWN'))
-
-for var in v.variables:
-    print('(variable) %s\nat %s\n' % (var, coord[var] if var in coord else 'UNKNOWN'))
-
-for func in v.functions:
-    print('(function) %s\nat %s\n' % (func, coord[func] if func in coord else 'UNKNOWN'))
+    for func in v.functions:
+        print('(function) %s\nat %s\n' % (func, coord[func] if func in coord else 'UNKNOWN'))
