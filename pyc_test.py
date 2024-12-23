@@ -1,80 +1,158 @@
 import sys, shutil
-from pycparser import parse_file, c_ast
+from pycparser import parse_file
+from pycparser.c_ast import *
 
-class FindDef(c_ast.NodeVisitor):
-    res = None
-    def __new__(cls, funcname):
-        instance = super(FindDef, cls).__new__(cls)
-        instance.funcname = funcname
-        return instance
+class Scanner(NodeVisitor):
+    searchin_funcs = set()
+    searchin_vars = set()
 
-    def visit_FuncDef(self, node):
-        if (node.decl.name == self.funcname):
-            self.res = node
+    # Symbols
+    functions = set()
+    variables = set()
+    types = set()
+    structs = set()
+    unions = set()
+
+    coord = {}
+
+    class GatherSymbols(NodeVisitor):
+        local_variables = set()
+        current_level_variables : set = None
+
+        def __init__(self, parent):
+            super().__init__()
+            self.parent : Scanner = parent
+
+        def visit_FuncCall(self, node):
+            name : Node = node.name
+            if type(name) is ID:
+                self.parent.functions.add(name.name)
+            else:
+                self.visit(name)
+
+            args : Node = node.args
+            if args is not None:
+                self.visit(args)
+
+        def visit_ID(self, node):
+            name : str = node.name
+            if name not in self.local_variables:
+                self.parent.variables.add(name)
+                self.parent.searchin_vars.add(name)
+
+        def visit_Compound(self, node):
+            prev_level_variables = self.current_level_variables
+            self.current_level_variables = set()
+
+            self.generic_visit(node)
+
+            self.local_variables -= self.current_level_variables
+            self.current_level_variables = prev_level_variables
+
+        def visit_Decl(self, node):
+            self.local_variables.add(node.name)
+            self.current_level_variables.add(node.name)
+
+            self.visit(node.type)
+
+        def visit_IdentifierType(self, node):
+            self.parent.types.add(node.names[0])
+
+        def visit_Struct(self, node):
+            self.parent.structs.add(node.names[0])
+
+        def visit_Struct(self, node):
+            self.parent.unions.add(node.names[0])
+
+        def visit_StructRef(self, node):
+            self.visit(node.name)
+
+    v_gatherSymbols : GatherSymbols
+
+    def __init__(self, funcs):
+        super().__init__()
+        self.v_gatherSymbols = Scanner.GatherSymbols(self)
+        for func in funcs:
+            self.searchin_funcs.add(func)
+
+    def visit_FuncDef(self, node : Node):
+        name = node.decl.name
+        if name in self.searchin_funcs:
+            for param in node.decl.type.args.params:
+                self.v_gatherSymbols.local_variables.add(param.name)
+
+            self.v_gatherSymbols.visit(node.body)
+
+            self.v_gatherSymbols.local_variables.clear()
+            self.coord[name] = node.coord
+        elif name in self.functions:
+            self.coord[name] = node.coord
+        elif name in self.variables:
+            self.variables.remove(name)
+            self.functions.add(name)
+
+            self.coord[name] = node.coord
+
+    def visit_Decl(self, node):
+        name = node.name
+        t = node.type
+        if type(t) is FuncDecl:
+        # it's a function declaration
+            if name in self.functions:
+                self.coord[name] = node.coord
+            elif name in self.variables:
+                self.variables.remove(name)
+                self.functions.add(name)
+                self.coord[name] = node.coord
+        else:
+            while type(t) is PtrDecl:
+                t = t.type
+            if type(t) is Struct:
+            # it's a struct
+                if name in self.structs:
+                    self.coord[name] = node.coord
+                    self.v_gatherSymbols.visit(node.type)
+            elif type(t) is Union:
+            # it's an union
+                if name in self.unions:
+                    self.coord[name] = node.coord
+                    self.v_gatherSymbols.visit(node.type)
+            else:
+                t = t.type
+                if type(t) is IdentifierType:
+                # it's a variable declaration
+                    if name in self.variables:
+                        self.coord[name] = node.coord
+                        self.v_gatherSymbols.visit(node.type)
+                elif type(t) is Enum:
+                # it's an enum
+                    for enumerator in t.values.enumerators:
+                        name = enumerator.name
+                        if name in self.variables:
+                            self.coord[name] = node.coord
+
+    def visit_Typedef(self, node):
+        name = node.name
+        if name in self.types:
+            self.coord[name] = node.coord
+        self.visit_Decl(node)
+
+    def generic_visit(self, node):
+        return None
+
+    def exec(self, node):
+        for c in reversed([i for i in node]):
+            self.visit(c)
 
 
-class FindFuncCalls(c_ast.NodeVisitor):
-    res = []
-    def visit_FuncCall(self, node):
-        self.res += [node]
-
-
-class FindFuncDeclarations(c_ast.NodeVisitor):
-    def __new__(cls, funcnames):
-        instance = super(FindFuncDeclarations, cls).__new__(cls)
-        instance.funcnames = funcnames
-        return instance
-
-    def visit_FuncDecl(self, node):
-        try:
-            name = node.type.type.names[0]
-            if name in self.funcnames:
-                print('%s %s at %s' % (node.type.type.names[0], node.type.declname, node.coord))
-        except:
-            print('%s at %s' % (node.type, node.coord))
-
-
-def gather_declarations(ast, funcname):
-    # Find the definition of the function in the .c file
-    v = FindDef(funcname)
-    v.visit(ast)
-    definition = v.res
-
-    if definition is None:
-        raise Exception("Definition for %s doesn't exist" % (funcname))
-    # TODO Check if the definition isn't from an included file (weird, and shouldn't happen in any
-    # serious decomp, but this probably should be detected for the general use)
-
-    # Find names of functions called inside the definition
-    v = FindFuncCalls()
-    v.visit(definition.body)
-    calls = v.res
-
-    funcnames = set()
-    for call in calls:
-        funcnames.add(call.name.name)
-
-    # TODO Separate functions declared in the .c file, then gather their declarations
-
-    # TODO Find names of global variables used inside the definition
-
-    # TODO Separate global variables declared in the .c file, then gather their declarations
-
-    # TODO Find names of macros used inside the definition
-
-    # TODO Separate macros declared in the .c file, then gather their declarations
-
-    # TODO For the remaining functions, global variables and macros gather the closest headers which contain them
-
-    print('%s' % (funcnames))
-
-    v = FindFuncDeclarations(funcnames)
-    v.visit(ast)
-
-filename = 'mm/src/libultra/os/gettime.c'
-funcname = 'osGetTime'
+filename = 'mm/src/code/z_message.c'
+funcnames = [
+    'Message_OpenText',
+    'Message_Init',
+]
 
 include_dirs = [
+    'mm',
     'mm/include',
     'mm/src',
     'mm/assets'
@@ -95,4 +173,16 @@ ast = parse_file(filename, use_cpp=True,
         cpp_args=cpp_flags + [
             f'-I{i}' for i in include_dirs
         ])
-gather_declarations(ast, funcname)
+
+v = Scanner(funcnames)
+v.exec(ast)
+
+coord = v.coord
+for t in v.types:
+    print('(type) %s\nat %s\n' % (t, coord[t] if t in coord else 'UNKNOWN'))
+
+for var in v.variables:
+    print('(variable) %s\nat %s\n' % (var, coord[var] if var in coord else 'UNKNOWN'))
+
+for func in v.functions:
+    print('(function) %s\nat %s\n' % (func, coord[func] if func in coord else 'UNKNOWN'))
