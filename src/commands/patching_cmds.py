@@ -2,8 +2,8 @@ import sys, os, subprocess, argparse, shutil, json
 from typing import Any
 from pathlib import Path
 
-from util import *
-from colors import *
+import project
+import util
 
 from commands import SubCommandBase
 
@@ -15,12 +15,17 @@ class CreateConfigCommand(SubCommandBase):
     }
 
     def setup_args(self):
+        self.hello: Path = Path("dist")
+        
         pass
 
     def process(self, args: argparse.Namespace) -> Any:
-        print("CreateConfigCommand called")
+        new_config = project.ProjectConfig.default_project_config_dict()
+        
+        print(json.dumps(new_config, indent=4))
+        
         return None
-
+    
 
 class GeneratePatchCommand(SubCommandBase):
     name: str = "generate"
@@ -35,4 +40,5 @@ class GeneratePatchCommand(SubCommandBase):
     def process(self, args: argparse.Namespace) -> Any:
         print("GeneratePatchCommand called")
         return None
+    
 

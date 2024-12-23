@@ -7,26 +7,14 @@ import settings
 import project
 import commands
 
-    
-def init_user():
+
+def main():
     settings.paths.load_paths()
     
     if util.mkdir_if_missing(settings.paths.rfa_user_dir):
         print(f"Created rfa user directory at '{settings.paths.rfa_user_dir}'.")
         
     settings.load_settings()
-
-
-def main():
-    init_user()
-
-    # if no command is given:
-    project.info.attempt_load_project()
-        
-    if project.info.is_project:
-        util.print_color("green", f"-> Running for local project '{project.info.project_root}':")
-    else:
-        util.print_color("green", "-> Running without project: ")
 
     cmd_parser = commands.ArgumentProcessor()
 

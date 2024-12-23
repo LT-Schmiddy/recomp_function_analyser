@@ -5,27 +5,84 @@ from pathlib import Path
 import util
 import settings
 
-class ProjectInfo:
-    CONFIG_FILE_NAME = "scb_project_config.json"
-    CMAKE_CORE_DIR_NAME = "scb_cmake"
+class ProjectConfig():
+    location: Path
     
+    project_root: Path
+    project_includes: list[Path]
+    external_includes: list[Path]
+    proproc_flags: list[str]
+    
+    class FileSpec:
+        file: Path
+        functions: list[str]
+        preprocess: bool
+        
+        def __init__(self, file: Path, functions: list[str], preprocess = True):
+            self.file = file
+            self.functions = functions
+            self.preprocess = preprocess
+            
+        def as_dict(self) -> dict:
+            return {
+                "file": str(self.file),
+                "functions": self.functions,
+                "preprocess": self.preprocess
+            }
+    
+    process_specs: list[FileSpec]
+    
+    @classmethod
+    def default_project_config_dict(cls):
+        return {
+            "project_root": ".",
+            "project_includes": [
+                ".",
+                "include",
+                "src",
+                "assets",
+            ],
+            "external_includes": [],
+            "process_specs": [
+                {
+                    "file": "test_file.c",
+                    "functions": [
+                        "TestFuncName"
+                    ],
+                    "preprocess": True
+                }
+            ]
+        }
+    
+    def __init__(self, *, config_dict: dict = None):
+        if config_dict is not None:
+            self.load_from_dict(config_dict)
+        else:    
+            self.project_root = "."
+            self.project_includes = []
+            self.external_includes = []
+            self.process_specs = []
+            
+    def load_from_dict(self, input):
+        self.project_root = Path(input["project_root"])
+        self.project_includes = [Path(i) for i in input["project_includes"]]
+        self.external_includes = [Path(i) for i in input["external_includes"]]
+        self.process_specs = [ProjectConfig.FileSpec(Path(i["file"]), i["functions"], i["preprocess"]) for i in input["process_specs"]]
+        
+    def save_to_dict(self):
+        return {
+            "project_root": str(self.project_root),
+            "project_includes": [str(i) for i in self.project_includes],
+            "external_includes": [str(i) for i in self.external_includes],
+            "process_specs": [i.as_dict() for i in self.process_specs]
+        }
+    
+
+class ProjectHandler:    
     config_path: Path = None
     config: dict = None
     
-    @classmethod
-    def default_project_config(cls):
-        return {
-            "name": "my_project",
-            "version": "1.0.0",
-            "description": "description of project",
-            "authors": [
-                "Author 1"
-            ],
-            "vcpkg": {
-                "local_path": "./vcpkg",
-                "packages": []
-            }
-        }
+    
     
     def __init__(self, current_path: Path = None):
         pass
@@ -37,12 +94,6 @@ class ProjectInfo:
 
     @property
     def project_root(self) -> Path:
-        if self.is_project:
-            return self.config_path.parent
-        return None
-    
-    
-    def get_project_cmake_core(self) -> Path:
         if self.is_project:
             return self.config_path.parent
         return None
@@ -101,4 +152,4 @@ class ProjectInfo:
             
         util.save_json_config(file_path, self.config)
         
-info = ProjectInfo()
+info = ProjectHandler()
