@@ -59,61 +59,62 @@ def yn_prompt(msg: str = "", default=None):
         print_error("Invalid response. Try again...")
 
 
-def save_json_config(path: Path, config: dict):
-    path.write_text(json.dumps(config, indent=4))
-    
-
-def load_json_config(path: Path, default_config: dict):
-    
-    def recursive_load_list(main: list, loaded: list):
-        for i in range(0, max(len(main), len(loaded))):
+def recursive_update_dict(base: dict, overlay: dict) -> dict:
+    def recursive_load_list(base: list, overlay: list):
+        for i in range(0, max(len(base), len(overlay))):
             # Found in both:
-            if i < len(main) and i < len(loaded):
-                if isinstance(loaded[i], dict):
-                    recursive_load_dict(main[i], loaded[i])
-                elif isinstance(loaded[i], list):
-                    recursive_load_list(main[i], loaded[i])
+            if i < len(base) and i < len(overlay):
+                if isinstance(overlay[i], dict):
+                    recursive_load_dict(base[i], overlay[i])
+                elif isinstance(overlay[i], list):
+                    recursive_load_list(base[i], overlay[i])
                 else:
-                    main[i] = loaded[i]
+                    base[i] = overlay[i]
             # Found in main only:
-            elif i < len(loaded):
-                main.append(loaded[i])
+            elif i < len(overlay):
+                base.append(overlay[i])
 
 
-    def recursive_load_dict(main: dict, loaded: dict):
+    def recursive_load_dict(base: dict, overlay: dict):
         new_update_dict = {}
-        for key, value in main.items():
-            if not (key in loaded):
+        for key, value in base.items():
+            if not (key in overlay):
                 continue
             if isinstance(value, dict):
-                recursive_load_dict(value, loaded[key])
+                recursive_load_dict(value, overlay[key])
             elif isinstance(value, list):
-                recursive_load_list(value, loaded[key])
+                recursive_load_list(value, overlay[key])
             else:
-                new_update_dict[key] = loaded[key]
+                new_update_dict[key] = overlay[key]
         
         # Load settings added to file:
-        for key, value in loaded.items():
-            if not (key in main):
-                new_update_dict[key] = loaded[key]
+        for key, value in overlay.items():
+            if not (key in base):
+                new_update_dict[key] = overlay[key]
 
-        main.update(new_update_dict)
+        base.update(new_update_dict)
+    
+    recursive_load_dict(base, overlay)
 
+def load_json_config(path: Path, default_config: dict):
     # load preexistent settings file
     if path.exists() and path.is_file():
         try:
             imported_config = json.loads(path.read_text())
             # current.update(imported_settings)
-            recursive_load_dict(default_config, imported_config)
+            recursive_update_dict(default_config, imported_config)
         except json.decoder.JSONDecodeError as e:
-            print_error(f"CRITICAL ERROR IN LOADING SETTINGS: {e}")
-            print_error("Using default settings...")
+            print_error(f"CRITICAL ERROR IN LOADING FILE: {e}")
+            print_error("Using default...")
 
     # settings file not found
     else:
         save_json_config(path, default_config)
-        print(f"Created new settings file at '{path}'.")
+        print(f"Created new file at '{path}'.")
 
+def save_json_config(path: Path, config: dict):
+    path.write_text(json.dumps(config, indent=4))
+    
 
 __all__ = (
     "is_build_version",

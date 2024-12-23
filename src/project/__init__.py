@@ -1,17 +1,21 @@
-import os, shutil, json, subprocess
+import sys, os, shutil, json, subprocess, io
 from typing import Union
 from pathlib import Path
 
+import pycparser
+
 import util
 import settings
+from core import Scanner
 
-class ProjectConfig():
+class PatchGenerator():
     location: Path
     
     project_root: Path
     project_includes: list[Path]
     external_includes: list[Path]
-    proproc_flags: list[str]
+    preproc_command: str
+    preproc_flags: list[str]
     
     class FileSpec:
         file: Path
@@ -33,7 +37,7 @@ class ProjectConfig():
     process_specs: list[FileSpec]
     
     @classmethod
-    def default_project_config_dict(cls):
+    def default_config_dict(cls):
         return {
             "project_root": ".",
             "project_includes": [
@@ -43,6 +47,14 @@ class ProjectConfig():
                 "assets",
             ],
             "external_includes": [],
+            "preproc_command": "clang",
+            "preproc_flags": [
+                '-U__GNUC__',
+                '-nostdinc',
+                '-E',
+                '-D_LANGUAGE_C',
+                '-DMIPS',
+            ],
             "process_specs": [
                 {
                     "file": "test_file.c",
@@ -53,103 +65,92 @@ class ProjectConfig():
                 }
             ]
         }
+        
+    @classmethod
+    def base_config_dict(cls):
+        return {
+            "project_root": "",
+            "project_includes": [],
+            "external_includes": [],
+            "preproc_command": "",
+            "preproc_flags": [],
+            "process_specs": []
+        }
+        
+    @property
+    def preproc_command_path(self):
+        return shutil.which(self.preproc_command)
     
-    def __init__(self, *, config_dict: dict = None):
+    def __init__(self, location: Path, *, config_dict: dict = None):
+        self.location = location
+        
         if config_dict is not None:
-            self.load_from_dict(config_dict)
+            self.configure_from_dict(config_dict)
         else:    
-            self.project_root = "."
+            self.project_root = Path(".")
             self.project_includes = []
             self.external_includes = []
+            self.preproc_command = ""
+            self.preproc_flags = []
             self.process_specs = []
-            
-    def load_from_dict(self, input):
-        self.project_root = Path(input["project_root"])
-        self.project_includes = [Path(i) for i in input["project_includes"]]
-        self.external_includes = [Path(i) for i in input["external_includes"]]
-        self.process_specs = [ProjectConfig.FileSpec(Path(i["file"]), i["functions"], i["preprocess"]) for i in input["process_specs"]]
-        
-    def save_to_dict(self):
-        return {
-            "project_root": str(self.project_root),
-            "project_includes": [str(i) for i in self.project_includes],
-            "external_includes": [str(i) for i in self.external_includes],
-            "process_specs": [i.as_dict() for i in self.process_specs]
-        }
-    
 
-class ProjectHandler:    
-    config_path: Path = None
-    config: dict = None
-    
-    
-    
-    def __init__(self, current_path: Path = None):
-        pass
-    
-    # Get general information:
-    @property
-    def is_project(self) -> bool:
-        return self.config_path is not None
+                   
+    def configure_from_dict(self, input: dict):
+        # load_dict = self.base_config_dict()
+        # util.recursive_update_dict(load_dict, input)
+        
+        load_dict = input
+        
+        self.project_root = self.location.joinpath(load_dict["project_root"])
+        self.project_includes = [self.project_root.joinpath(i) for i in load_dict["project_includes"]]
+        self.external_includes = [self.location.joinpath(i) for i in load_dict["external_includes"]]
+        self.preproc_command = load_dict["preproc_command"]
+        self.preproc_flags = load_dict["preproc_flags"]
+        self.process_specs = [PatchGenerator.FileSpec(self.project_root.joinpath(i["file"]), i["functions"], i["preprocess"]) for i in load_dict["process_specs"]]
 
-    @property
-    def project_root(self) -> Path:
-        if self.is_project:
-            return self.config_path.parent
-        return None
+    # Processing:
     
-    # Utilities:
-    def attempt_create_project(self, current_path: Path = None):
-        if current_path is None:
-            current_path = Path(os.getcwd())
+    def preprocess(self, out: io.TextIOWrapper = None):
+        if out is None:
+            out = sys.stdout
         
-        # Create the project config file:
-        self.config = self.default_project_config()
-        self.config_path = current_path.joinpath(self.CONFIG_FILE_NAME)
-        self.save_project_config(self.config_path)
-        
-        
-    def attempt_load_project(self, current_path: Path = None):
-        if current_path is None:
-            current_path = Path(os.getcwd())
-        
-        self.config_path = self.locate_project_file()
-        if self.config_path  is not None:
-            self.load_project_config(self.config_path)
-        
-    
-    def locate_project_file(self, current_path: Path = None) -> Path:
-        if current_path is None:
-            current_path = Path(os.getcwd())
-        
-        # Recurse up the current directory tree to find the current project file.
-        search_dir = current_path;
-        while True:
-            for candidate in [search_dir.joinpath(i) for i in os.listdir(search_dir)]:
-                if not candidate.is_file() or candidate.name !=self.CONFIG_FILE_NAME:
-                    continue
-                
-                return candidate
+        for i in self.process_specs:
+            result = subprocess.run(
+                [
+                    self.preproc_command_path,
+                    str(i.file)
+                ] +
+                self.preproc_flags + [
+                    f'-I{i}' for i in self.project_includes
+                ]+ [
+                    f'-I{i}' for i in self.external_includes
+                ],
+                stdout=out
+            )
             
-            if len(search_dir.parents) == 0:
-                break
-            search_dir = search_dir.parent
-            
-        return None
-    
-    
-    def load_project_config(self, file_path: Path = None):
-        if file_path is None:
-            file_path = self.config_path
-        
-        self.config = self.default_project_config()
-        util.load_json_config(file_path, self.config)
 
-
-    def save_project_config(self, file_path: Path = None):
-        if file_path is None:
-            file_path = self.config_path
+    def generate(self):
+        for i in self.process_specs:
+            ast = pycparser.parse_file(i.file, use_cpp=True,
+                cpp_path = self.preproc_command_path,
+                cpp_args = self.preproc_flags + [
+                    f'-I{i}' for i in self.project_includes
+                ]+ [
+                    f'-I{i}' for i in self.external_includes
+                ]
+            )
             
-        util.save_json_config(file_path, self.config)
-        
-info = ProjectHandler()
+            
+            v = Scanner(i.functions)
+            v.exec(ast)
+
+            coord = v.coord
+            for t in v.types:
+                print('(type) %s\nat %s\n' % (t, coord[t] if t in coord else 'UNKNOWN'))
+
+            for var in v.variables:
+                print('(variable) %s\nat %s\n' % (var, coord[var] if var in coord else 'UNKNOWN'))
+
+            for func in v.functions:
+                print('(function) %s\nat %s\n' % (func, coord[func] if func in coord else 'UNKNOWN'))
+    

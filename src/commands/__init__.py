@@ -1,5 +1,5 @@
 import sys, os, argparse
-from typing import Any
+from typing import Any, Callable
 
 
 class SubCommandBase:
@@ -21,7 +21,7 @@ class SubCommandBase:
         return None
 
 
-class ArgumentProcessor:
+class CommandProcessor:
     parser: argparse.ArgumentParser
     subparsers: Any
     subcommands: dict[str, SubCommandBase]
@@ -46,6 +46,10 @@ class ArgumentProcessor:
             return args.process_func(args)
         
         return None
-        
+
+class CommandProcessorArgs(argparse.Namespace):
+    subcommand: str
+    process_func: Callable
+
 # Importing all commands here:
 from .patching_cmds import *

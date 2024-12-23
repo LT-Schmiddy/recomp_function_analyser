@@ -16,7 +16,7 @@ def main():
         
     settings.load_settings()
 
-    cmd_parser = commands.ArgumentProcessor()
+    cmd_parser = commands.CommandProcessor()
 
     result = cmd_parser.process(sys.argv[1:])
 
