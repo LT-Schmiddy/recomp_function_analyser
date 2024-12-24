@@ -3,7 +3,6 @@ from typing import Union
 from pathlib import Path
 
 import pycparser
-
 import util
 import settings
 from core import Scanner
@@ -131,7 +130,7 @@ class PatchGenerator():
 
     def generate(self):
         for i in self.process_specs:
-            ast = pycparser.parse_file(i.file, use_cpp=True,
+            ast = pycparser.parse_file(i.file, use_cpp=i.preprocess,
                 cpp_path = self.preproc_command_path,
                 cpp_args = self.preproc_flags + [
                     f'-I{i}' for i in self.project_includes
@@ -144,13 +143,15 @@ class PatchGenerator():
             v = Scanner(i.functions)
             v.exec(ast)
 
-            coord = v.coord
             for t in v.types:
-                print('(type) %s\nat %s\n' % (t, coord[t] if t in coord else 'UNKNOWN'))
+                print('(type) %s\nat %s\n' % (t, v.coord[t] if t in v.coord else 'UNKNOWN'))
 
             for var in v.variables:
-                print('(variable) %s\nat %s\n' % (var, coord[var] if var in coord else 'UNKNOWN'))
+                print('(variable) %s\nat %s\n' % (var, v.coord[var] if var in v.coord else 'UNKNOWN'))
 
             for func in v.functions:
-                print('(function) %s\nat %s\n' % (func, coord[func] if func in coord else 'UNKNOWN'))
-    
+                print('(function) %s\nat %s\n' % (func, v.coord[func] if func in v.coord else 'UNKNOWN'))
+            
+
+            
+
