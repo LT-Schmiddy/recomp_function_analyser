@@ -253,6 +253,7 @@ class ConstexprEvaluator:
             (symbol, val) = current.val
             if symbol == self.Symbol.OPERATOR and prev == symbol and (val == '+' or val == '-'):
                 current.val = (self.Symbol.OPERATOR, 'u' + val)
+            prev = symbol
             current = current.next
 
         # Process symbols
@@ -334,7 +335,7 @@ if __name__ == "__main__":
     file = 'test/test.c'
 
     e = ConstexprEvaluator()
-    val = e.eval("(4 > 3 ? 4 : 3) ? 4 : 3")
+    val = e.eval("(2 + 2 * 2) * 10 == 6 ? 10 : 7")
     print(val)
     # p = Preprocessor(include_dirs)
     # p.exec(file)
