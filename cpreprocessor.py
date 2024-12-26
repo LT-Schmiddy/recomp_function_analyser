@@ -275,11 +275,8 @@ class ConstexprEvaluator:
             raise Exception("Invalid Expression!")
 
         current = self.symbols.begin
-        while current is not None:
-            (symbol, val) = current.val
-            if symbol == self.Symbol.OPERATOR:
-                raise Exception("Invalid Expression!")
-            current = current.next
+        if current.next is not None:
+            raise Exception("Invalid Expression!")
 
         return (self.symbols.begin.val[1], i)
 
