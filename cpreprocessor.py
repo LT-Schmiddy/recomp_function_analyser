@@ -257,7 +257,6 @@ class ConstexprEvaluator:
 
         # Process symbols
         for (associativity, symbol_set) in self.precedence:
-            current
             if associativity == self.Associativity.LEFT_TO_RIGHT:
                 current = self.symbols.begin
             else:
@@ -274,6 +273,13 @@ class ConstexprEvaluator:
 
         if len(self.cond_s) > 0:
             raise Exception("Invalid Expression!")
+
+        current = self.symbols.begin
+        while current is not None:
+            (symbol, val) = current.val
+            if symbol == self.Symbol.OPERATOR:
+                raise Exception("Invalid Expression!")
+            current = current.next
 
         return (self.symbols.begin.val[1], i)
 
