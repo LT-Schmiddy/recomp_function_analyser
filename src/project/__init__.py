@@ -3,38 +3,45 @@ from typing import Union
 from pathlib import Path
 
 import pycparser
+from pycparser import c_generator
 import util
 import settings
 from core import Scanner
 
-class PatchGenerator():
+
+class PatchGenerator:
     location: Path
-    
+
     project_root: Path
     project_includes: list[Path]
     external_includes: list[Path]
     preproc_command: str
     preproc_flags: list[str]
-    
+
     class FileSpec:
-        file: Path
+        in_file: Path
         functions: list[str]
         preprocess: bool
-        
-        def __init__(self, file: Path, functions: list[str], preprocess = True):
-            self.file = file
+        out_file: Path
+
+        def __init__(
+            self, in_file: Path, functions: list[str], preprocess: bool, out_file: Path
+        ):
+            self.in_file = in_file
             self.functions = functions
             self.preprocess = preprocess
-            
+            self.out_file = out_file
+
         def as_dict(self) -> dict:
             return {
-                "file": str(self.file),
+                "in_file": str(self.in_file),
                 "functions": self.functions,
-                "preprocess": self.preprocess
+                "preprocess": self.preprocess,
+                "out_file": str(self.out_file),
             }
-    
+
     process_specs: list[FileSpec]
-    
+
     @classmethod
     def default_config_dict(cls):
         return {
@@ -48,23 +55,22 @@ class PatchGenerator():
             "external_includes": [],
             "preproc_command": "clang",
             "preproc_flags": [
-                '-U__GNUC__',
-                '-nostdinc',
-                '-E',
-                '-D_LANGUAGE_C',
-                '-DMIPS',
+                "-U__GNUC__",
+                "-nostdinc",
+                "-E",
+                "-D_LANGUAGE_C",
+                "-DMIPS",
             ],
             "process_specs": [
                 {
-                    "file": "test_file.c",
-                    "functions": [
-                        "TestFuncName"
-                    ],
-                    "preprocess": True
+                    "in_file": "test_file.c",
+                    "functions": ["TestFuncName"],
+                    "preprocess": True,
+                    "out_file": "out_file.c",
                 }
-            ]
+            ],
         }
-        
+
     @classmethod
     def base_config_dict(cls):
         return {
@@ -73,19 +79,19 @@ class PatchGenerator():
             "external_includes": [],
             "preproc_command": "",
             "preproc_flags": [],
-            "process_specs": []
+            "process_specs": [],
         }
-        
+
     @property
     def preproc_command_path(self):
         return shutil.which(self.preproc_command)
-    
+
     def __init__(self, location: Path, *, config_dict: dict = None):
         self.location = location
-        
+
         if config_dict is not None:
             self.configure_from_dict(config_dict)
-        else:    
+        else:
             self.project_root = Path(".")
             self.project_includes = []
             self.external_includes = []
@@ -93,65 +99,75 @@ class PatchGenerator():
             self.preproc_flags = []
             self.process_specs = []
 
-                   
     def configure_from_dict(self, input: dict):
         # load_dict = self.base_config_dict()
         # util.recursive_update_dict(load_dict, input)
-        
+
         load_dict = input
-        
+
         self.project_root = self.location.joinpath(load_dict["project_root"])
-        self.project_includes = [self.project_root.joinpath(i) for i in load_dict["project_includes"]]
-        self.external_includes = [self.location.joinpath(i) for i in load_dict["external_includes"]]
+        self.project_includes = [
+            self.project_root.joinpath(i) for i in load_dict["project_includes"]
+        ]
+        self.external_includes = [
+            self.location.joinpath(i) for i in load_dict["external_includes"]
+        ]
         self.preproc_command = load_dict["preproc_command"]
         self.preproc_flags = load_dict["preproc_flags"]
-        self.process_specs = [PatchGenerator.FileSpec(self.project_root.joinpath(i["file"]), i["functions"], i["preprocess"]) for i in load_dict["process_specs"]]
+        self.process_specs = [
+            PatchGenerator.FileSpec(
+                self.project_root.joinpath(i["in_file"]),
+                i["functions"],
+                i["preprocess"],
+                self.location.joinpath(i["out_file"]),
+            )
+            for i in load_dict["process_specs"]
+        ]
 
     # Processing:
-    
+
     def preprocess(self, out: io.TextIOWrapper = None):
         if out is None:
             out = sys.stdout
-        
+
         for i in self.process_specs:
             result = subprocess.run(
-                [
-                    self.preproc_command_path,
-                    str(i.file)
-                ] +
-                self.preproc_flags + [
-                    f'-I{i}' for i in self.project_includes
-                ]+ [
-                    f'-I{i}' for i in self.external_includes
-                ],
-                stdout=out
+                [self.preproc_command_path, str(i.in_file)]
+                + self.preproc_flags
+                + [f"-I{i}" for i in self.project_includes]
+                + [f"-I{i}" for i in self.external_includes],
+                stdout=out,
             )
-            
 
     def generate(self):
         for i in self.process_specs:
-            ast = pycparser.parse_file(i.file, use_cpp=i.preprocess,
-                cpp_path = self.preproc_command_path,
-                cpp_args = self.preproc_flags + [
-                    f'-I{i}' for i in self.project_includes
-                ]+ [
-                    f'-I{i}' for i in self.external_includes
-                ]
+            ast = pycparser.parse_file(
+                i.in_file,
+                use_cpp=i.preprocess,
+                cpp_path=self.preproc_command_path,
+                cpp_args=self.preproc_flags
+                + [f"-I{i}" for i in self.project_includes]
+                + [f"-I{i}" for i in self.external_includes],
             )
-            
-            
+
             v = Scanner(i.functions)
             v.exec(ast)
-
-            for t in v.types:
-                print('(type) %s\nat %s\n' % (t, v.coord[t] if t in v.coord else 'UNKNOWN'))
-
-            for var in v.variables:
-                print('(variable) %s\nat %s\n' % (var, v.coord[var] if var in v.coord else 'UNKNOWN'))
-
-            for func in v.functions:
-                print('(function) %s\nat %s\n' % (func, v.coord[func] if func in v.coord else 'UNKNOWN'))
             
+            # coord = v.coord
+            # for t in v.types:
+            #     print('(type) %s\nat %s\n' % (t, coord[t] if t in coord else 'UNKNOWN'))
 
+            # for var in v.variables:
+            #     print('(variable) %s\nat %s\n' % (var, coord[var] if var in coord else 'UNKNOWN'))
+
+            # for func in v.functions:
+            #     print('(function) %s\nat %s\n' % (func, coord[func] if func in coord else 'UNKNOWN'))
             
+            generator = c_generator.CGenerator()
+            out_str = ""            
+            for j in reversed(v.output_nodes):
+                out_str += generator.visit(j.node) + "\n"
+                
+            i.out_file.write_text(out_str)
+                
 
