@@ -10,13 +10,11 @@ from core.ast_code_generator import TestVisitor
 from .config_macros import ConfigMacroProcessor
 
 class PatchGenerator:
-    macros: ConfigMacroProcessor
-    
+    macros_processor: ConfigMacroProcessor
     location: Path
 
-    project_root: Path
-    project_includes: list[Path]
-    external_includes: list[Path]
+    local_macros: dict[str, str]
+    includes: list[Path]
     preproc_command: str
     preproc_flags: list[str]
 
@@ -47,14 +45,15 @@ class PatchGenerator:
     @classmethod
     def default_config_dict(cls):
         return {
-            "project_root": ".",
-            "project_includes": [
-                ".",
-                "include",
-                "src",
-                "assets",
+            "local_macros": {
+                "PROJECT_ROOT": "."
+            },
+            "includes": [
+                "${PROJECT_ROOT}/.",
+                "${PROJECT_ROOT}/include",
+                "${PROJECT_ROOT}/src",
+                "${PROJECT_ROOT}/assets",
             ],
-            "external_includes": [],
             "preproc_command": "${DEFAULT_PREPROC}",
             "preproc_flags": [
                 "-U__GNUC__",
@@ -76,9 +75,8 @@ class PatchGenerator:
     @classmethod
     def base_config_dict(cls):
         return {
-            "project_root": "",
-            "project_includes": [],
-            "external_includes": [],
+            "local_macros": {},
+            "includes": [],
             "preproc_command": "",
             "preproc_flags": [],
             "process_specs": [],
@@ -89,15 +87,14 @@ class PatchGenerator:
         return shutil.which(self.preproc_command)
 
     def __init__(self, location: Path, *, config_dict: dict = None):
-        self.macros = ConfigMacroProcessor()
+        self.macros_processor = ConfigMacroProcessor()
         
         self.location = location
         if config_dict is not None:
             self.configure_from_dict(config_dict)
         else:
             self.project_root = Path(".")
-            self.project_includes = []
-            self.external_includes = []
+            self.includes = []
             self.preproc_command = ""
             self.preproc_flags = []
             self.process_specs = []
@@ -106,24 +103,24 @@ class PatchGenerator:
     def configure_from_dict(self, in_dict: dict):
         load_dict = self.base_config_dict()
         util.recursive_update_dict(load_dict, in_dict)
-        self.macros.process_recurse(load_dict)
         
-        print(load_dict)
+        # Load macros from file:
+        for name, value in load_dict["local_macros"].items():
+            self.macros_processor.add_macro(name, value)
+            
+        # Process all macros:
+        self.macros_processor.process_recurse(load_dict)
         
+        # print(load_dict)
         # load_dict = in_dict
-
-        self.project_root = self.location.joinpath(load_dict["project_root"])
-        self.project_includes = [
-            self.project_root.joinpath(i) for i in load_dict["project_includes"]
-        ]
-        self.external_includes = [
-            self.location.joinpath(i) for i in load_dict["external_includes"]
+        self.includes = [
+            self.location.joinpath(i) for i in load_dict["includes"]
         ]
         self.preproc_command = load_dict["preproc_command"]
         self.preproc_flags = load_dict["preproc_flags"]
         self.process_specs = [
             PatchGenerator.FileSpec(
-                self.project_root.joinpath(i["in_file"]),
+                self.location.joinpath(i["in_file"]),
                 i["functions"],
                 i["preprocess"],
                 self.location.joinpath(i["out_file"]),
@@ -141,8 +138,7 @@ class PatchGenerator:
             result = subprocess.run(
                 [self.preproc_command_path, str(i.in_file)]
                 + self.preproc_flags
-                + [f"-I{i}" for i in self.project_includes]
-                + [f"-I{i}" for i in self.external_includes],
+                + [f"-I{i}" for i in self.includes],
                 stdout=out,
             )
             
@@ -158,8 +154,7 @@ class PatchGenerator:
                 use_cpp=i.preprocess,
                 cpp_path=self.preproc_command_path,
                 cpp_args=self.preproc_flags
-                + [f"-I{i}" for i in self.project_includes]
-                + [f"-I{i}" for i in self.external_includes],
+                + [f"-I{i}" for i in self.includes]
             )
 
             test = TestVisitor(i.functions)

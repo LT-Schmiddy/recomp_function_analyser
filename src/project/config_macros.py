@@ -22,11 +22,12 @@ class ConfigMacroProcessor:
             
             return self._value
         
+        def should_process(self, in_str: str):
+            return self.match_str in in_str
+        
         def process(self, in_str: str) -> str:
-            if self.match_str in in_str:
-                return in_str.replace(self.match_str, self.value)
-            else:
-                return in_str
+            return in_str.replace(self.match_str, self.value)
+
     
     
     macros: list[ConfigMacroDef]
@@ -36,6 +37,9 @@ class ConfigMacroProcessor:
             ConfigMacroProcessor.ConfigMacroDef("DEFAULT_PREPROC", lambda: shutil.which("clang"))
         ]
         
+    def add_macro(self, name: str, value: str | Callable):
+        self.macros.append(ConfigMacroProcessor.ConfigMacroDef(name, value))
+    
     def should_recurse(self, item):
         return isinstance(item, list) or isinstance(item, dict)
         
@@ -63,7 +67,18 @@ class ConfigMacroProcessor:
                 
     def process_non_recurse(self, item) -> str:
         if isinstance(item, str):
-            for macro in self.macros:
-                item = macro.process(item)
+            
+            # If the string was updated via a macro, we'll set the entire process to run again.
+            # This allows for the evaluation of nested macros.
+            # TODO: prevent recursive macros from creating an infinite loop. somehow.
+            needs_update: bool = True
+            while needs_update:
+                needs_update = False
+                for macro in self.macros:
+                    if macro.should_process(item):
+                        item = macro.process(item)
+                        needs_update = True
         
         return item
+    
+    
