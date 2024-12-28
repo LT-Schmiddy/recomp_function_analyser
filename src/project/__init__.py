@@ -1,5 +1,5 @@
 import sys, os, shutil, json, subprocess, io
-from typing import Union
+from typing import Union, Callable
 from pathlib import Path
 
 import pycparser
@@ -7,9 +7,11 @@ from pycparser import c_generator
 import util
 import settings
 from core.ast_code_generator import TestVisitor
-
+from .config_macros import ConfigMacroProcessor
 
 class PatchGenerator:
+    macros: ConfigMacroProcessor
+    
     location: Path
 
     project_root: Path
@@ -53,7 +55,7 @@ class PatchGenerator:
                 "assets",
             ],
             "external_includes": [],
-            "preproc_command": "clang",
+            "preproc_command": "${DEFAULT_PREPROC}",
             "preproc_flags": [
                 "-U__GNUC__",
                 "-nostdinc",
@@ -87,8 +89,9 @@ class PatchGenerator:
         return shutil.which(self.preproc_command)
 
     def __init__(self, location: Path, *, config_dict: dict = None):
+        self.macros = ConfigMacroProcessor()
+        
         self.location = location
-
         if config_dict is not None:
             self.configure_from_dict(config_dict)
         else:
@@ -98,12 +101,16 @@ class PatchGenerator:
             self.preproc_command = ""
             self.preproc_flags = []
             self.process_specs = []
+        
 
-    def configure_from_dict(self, input: dict):
-        # load_dict = self.base_config_dict()
-        # util.recursive_update_dict(load_dict, input)
-
-        load_dict = input
+    def configure_from_dict(self, in_dict: dict):
+        load_dict = self.base_config_dict()
+        util.recursive_update_dict(load_dict, in_dict)
+        self.macros.process_recurse(load_dict)
+        
+        print(load_dict)
+        
+        # load_dict = in_dict
 
         self.project_root = self.location.joinpath(load_dict["project_root"])
         self.project_includes = [
@@ -123,7 +130,7 @@ class PatchGenerator:
             )
             for i in load_dict["process_specs"]
         ]
-
+        print("Config Loaded.")
     # Processing:
 
     def preprocess(self, out: io.TextIOWrapper = None):
