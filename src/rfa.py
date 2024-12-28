@@ -20,7 +20,7 @@ def main():
 
     result = cmd_parser.process(sys.argv[1:])
 
-    if result is None:
+    if result is None or (isinstance(result, int) and result == 0):
         util.print_color("green", "Command completed successfully!")
         settings.save_settings()
         sys.exit(0)

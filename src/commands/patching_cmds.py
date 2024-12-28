@@ -49,7 +49,8 @@ class PreprocessCommand(SubCommandBase):
         new_config = project.PatchGenerator(args.config_path.parent, config_dict=json.loads(args.config_path.read_text()))
         
         new_config.preprocess(args.output)
-        args.output.close()
+        if args.output is not None:
+            args.output.close()
         
         return None
     

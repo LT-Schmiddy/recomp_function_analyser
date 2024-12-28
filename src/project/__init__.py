@@ -6,7 +6,7 @@ import pycparser
 from pycparser import c_generator
 import util
 import settings
-from core import Scanner
+from core.ast_code_generator import TestVisitor
 
 
 class PatchGenerator:
@@ -138,6 +138,11 @@ class PatchGenerator:
                 + [f"-I{i}" for i in self.external_includes],
                 stdout=out,
             )
+            
+            if result.returncode != 0:
+                return result.returncode
+            
+        
 
     def generate(self):
         for i in self.process_specs:
@@ -150,23 +155,14 @@ class PatchGenerator:
                 + [f"-I{i}" for i in self.external_includes],
             )
 
-            v = Scanner(i.functions)
-            v.exec(ast)
-            
-            # coord = v.coord
-            # for t in v.types:
-            #     print('(type) %s\nat %s\n' % (t, coord[t] if t in coord else 'UNKNOWN'))
-
-            # for var in v.variables:
-            #     print('(variable) %s\nat %s\n' % (var, coord[var] if var in coord else 'UNKNOWN'))
-
-            # for func in v.functions:
-            #     print('(function) %s\nat %s\n' % (func, coord[func] if func in coord else 'UNKNOWN'))
+            test = TestVisitor(i.functions)
+            test.analyse(ast)
             
             generator = c_generator.CGenerator()
             out_str = ""            
-            for j in reversed(v.output_nodes):
-                out_str += generator.visit(j.node) + "\n"
+            for j in reversed(test.func_decl_nodes):
+                out_str += generator.visit(j.param_decls) + ";\n"
+                out_str += generator.visit(j.decl) + ";\n"
                 
             i.out_file.write_text(out_str)
                 
