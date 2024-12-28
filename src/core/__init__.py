@@ -3,6 +3,8 @@ from pycparser import parse_file
 from pycparser.c_ast import *
 
 class Scanner(NodeVisitor):
+    TAG_PREFIX = '^'
+
     searchin_funcs = set()
 
     # Symbols
@@ -11,12 +13,16 @@ class Scanner(NodeVisitor):
     types = set()
     structs = set()
     unions = set()
+    enums = set()
 
     coord = {}
 
     class GatherSymbols(NodeVisitor):
-        local_variables = set()
-        current_level_variables : set = None
+        local_variables : set[str] = set()
+        current_level_variables : set[str] = None
+
+        local_tags : set[str] = set()
+        current_level_tags : set[str] = None
 
         def __init__(self, parent):
             super().__init__()
@@ -42,7 +48,13 @@ class Scanner(NodeVisitor):
             prev_level_variables = self.current_level_variables
             self.current_level_variables = set()
 
+            prev_level_tags = self.current_level_tags
+            self.current_level_tags = set()
+
             self.generic_visit(node)
+
+            self.local_tags -= self.current_level_tags
+            self.current_level_tags = prev_level_tags
 
             self.local_variables -= self.current_level_variables
             self.current_level_variables = prev_level_variables
@@ -54,16 +66,51 @@ class Scanner(NodeVisitor):
             self.visit(node.type)
 
         def visit_IdentifierType(self, node):
-            self.parent.types.add(node.names[0])
+            self.parent.types.update(set(node.names))
 
         def visit_Struct(self, node):
-            self.parent.structs.add(node.name)
+            self.handle_struct_union(node, self.parent.structs)
 
         def visit_Union(self, node):
-            self.parent.unions.add(node.name)
+            self.handle_struct_union(node, self.parent.unions)
+
+        def visit_Enum(self, node):
+            name : str = node.name
+            values = node.values
+            if values != None:
+                if name != None:
+                    self.local_tags.add(name)
+                    self.current_level_tags.add(name)
+
+                for enumerator in values.enumerators:
+                    name = enumerator.name
+                    if name in self.parent.variables:
+                        self.coord[name] = node.coord
+            elif name != None and name not in self.local_tags:
+                self.parent.enums.add(Scanner.TAG_PREFIX + name)
+
+
+        def handle_struct_union(self, node, symbols : set[str]):
+            name : str = node.name
+            decls = node.decls
+
+            if decls != None:
+                if name != None:
+                    self.local_tags.add(name)
+                    self.current_level_tags.add(name)
+
+                for decl in decls:
+                    self.visit(decl.type)
+            elif name != None and name not in self.local_tags:
+                symbols.add(Scanner.TAG_PREFIX + name)
 
         def visit_StructRef(self, node):
             self.visit(node.name)
+
+        def visit_FuncDecl(self, node):
+            for param in node.args.params:
+                self.visit(param.type)
+            self.visit(node.type)
 
     v_gatherSymbols : GatherSymbols
 
@@ -73,12 +120,17 @@ class Scanner(NodeVisitor):
         for func in funcs:
             self.searchin_funcs.add(func)
 
-    def visit_FuncDef(self, node : Node):
+    def visit_FuncDef(self, node):
         name = node.decl.name
         is_tracked = False
+
+        t = node.decl.type
+        args = t.args
+
         if name in self.searchin_funcs:
-            for param in node.decl.type.args.params:
-                self.v_gatherSymbols.local_variables.add(param.name)
+            if args != None:
+                for param in args.params:
+                    self.v_gatherSymbols.local_variables.add(param.name)
 
             self.v_gatherSymbols.visit(node.body)
 
@@ -93,9 +145,9 @@ class Scanner(NodeVisitor):
             is_tracked = True
 
         if is_tracked:
-            t = node.decl.type
-            for param in t.args.params:
-                self.v_gatherSymbols.visit(param.type)
+            if args != None:
+                for param in args.params:
+                    self.v_gatherSymbols.visit(param.type)
             self.v_gatherSymbols.visit(t.type)
             self.coord[name] = node.coord
 
@@ -114,43 +166,93 @@ class Scanner(NodeVisitor):
                 is_tracked = True
 
             if is_tracked:
-                t = node.type
-                for param in t.args.params:
-                    self.v_gatherSymbols.visit(param.type)
-                self.v_gatherSymbols.visit(t.type)
+                self.v_gatherSymbols.visit(t)
                 self.coord[name] = node.coord
         else:
             while isinstance(t, PtrDecl):
                 t = t.type
-            if isinstance(t, Struct):
-            # struct declaration
-                if name in self.structs:
-                    self.coord[name] = node.coord
-                    self.v_gatherSymbols.visit(node.type)
-            elif isinstance(t, Union):
-            # union declaration
-                if name in self.unions:
-                    self.coord[name] = node.coord
-                    self.v_gatherSymbols.visit(node.type)
-            else:
+
+            if isinstance(t, TypeDecl):
                 t = t.type
-                if isinstance(t, IdentifierType):
-                # variable declaration
-                    if name in self.variables:
-                        self.coord[name] = node.coord
-                        self.v_gatherSymbols.visit(node.type)
-                elif isinstance(t, Enum):
-                # enum declaration
-                    for enumerator in t.values.enumerators:
-                        name = enumerator.name
-                        if name in self.variables:
-                            self.coord[name] = node.coord
+
+            if isinstance(t, IdentifierType):
+            # variable declaration
+                if name in self.variables:
+                    self.coord[name] = node.coord
+                    self.v_gatherSymbols.visit(node.type)
+            elif isinstance(t, Enum):
+            # enum declaration
+                self.handle_enum_declaration(t, node.coord)
+            else:
+            # struct or union declaration
+                self.handle_nested_struct_union_declarations(t, node.coord, [])
 
     def visit_Typedef(self, node):
         name = node.name
         if name in self.types:
             self.coord[name] = node.coord
-        self.visit_Decl(node)
+            t = node.type.type
+
+            while isinstance(t, PtrDecl):
+                t = t.type
+
+            if isinstance(t, TypeDecl):
+                t = t.type
+
+            if isinstance(t, IdentifierType):
+                self.types.update(set(t.names))
+            elif isinstance(t, Enum):
+                self.handle_enum_declaration(t, node.coord)
+            else:
+                self.handle_nested_struct_union_declarations(t, node.coord, None)
+        else:
+            # handle this like a normal declaration
+            self.visit_Decl(node)
+
+    def handle_enum_declaration(self, node, origin_coord : str):
+        name = node.name
+        if name != None:
+            name = Scanner.TAG_PREFIX + name
+            if name in self.enums:
+                self.coord[name] = origin_coord
+
+        for enumerator in node.values.enumerators:
+            name = enumerator.name
+            if name in self.variables:
+                self.coord[name] = origin_coord
+
+    def handle_nested_struct_union_declarations(self, node, origin_coord : str, gather_stash : list):
+        while isinstance(node, PtrDecl):
+            node = node.type
+        if isinstance(node, TypeDecl):
+            node = node.type
+
+        symbols : set[str] = None
+        if isinstance(node, Struct):
+            symbols = self.structs
+        elif isinstance(node, Union):
+            symbols = self.unions
+
+        if symbols != None:
+            name = node.name
+            if name != None:
+                name = Scanner.TAG_PREFIX + name
+                if name in symbols:
+                    self.coord[name] = origin_coord
+                    if gather_stash != None:
+                        for el in gather_stash:
+                            self.v_gatherSymbols.visit(el)
+                        gather_stash = None
+            decls = node.decls
+            if decls != None:
+                for decl in decls:
+                    self.handle_nested_struct_union_declarations(decl.type, origin_coord, gather_stash)
+        elif isinstance(node, Enum):
+            self.handle_enum_declaration(node, origin_coord)
+        elif gather_stash != None:
+            gather_stash += [node]
+        else:
+            self.v_gatherSymbols.visit(node)
 
     def generic_visit(self, node):
         return None
@@ -193,11 +295,20 @@ if __name__ == '__main__':
     v.exec(ast)
 
     coord = v.coord
-    for t in v.types:
-        print('(type) %s\nat %s\n' % (t, coord[t] if t in coord else 'UNKNOWN'))
+    for node in v.types:
+        print('(type) %s\nat %s\n' % (node, coord[node] if node in coord else 'UNKNOWN'))
 
     for var in v.variables:
         print('(variable) %s\nat %s\n' % (var, coord[var] if var in coord else 'UNKNOWN'))
 
     for func in v.functions:
         print('(function) %s\nat %s\n' % (func, coord[func] if func in coord else 'UNKNOWN'))
+
+    for struct in v.structs:
+        print('(struct) %s\nat %s\n' % (struct, coord[struct] if struct in coord else 'UNKNOWN'))
+
+    for union in v.unions:
+        print('(union) %s\nat %s\n' % (union, coord[union] if union in coord else 'UNKNOWN'))
+
+    for enum in v.enums:
+        print('(enum) %s\nat %s\n' % (enum, coord[enum] if enum in coord else 'UNKNOWN'))
