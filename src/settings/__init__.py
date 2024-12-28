@@ -4,26 +4,84 @@ from pathlib import Path
 from colors import *
 import util
 from . import path_handler
-# If we're executing as the source version, the main .py file  is actually found in the `src` subdirectory
-# of the project, and `exec_dir` is changed to reflect that. We'll create `exec_file_dir` in case we actually need the
-# unmodified path to that script. Obviously, in build mode, these two values will be the same.
 
-def default_settings():
-    return {}
 
-current = default_settings()
-paths = path_handler.PathHandler()
+def default_settings_dict():
+    return {
+        "preprocessing": {
+            "default_cmd": "clang",
+            "default_flags": [
+                "-E"
+            ]
+        }
+    }
 
-def save_settings(path: Path = None, settings_dict: dict = current):
-    if path is None:
-        path = paths.rfa_user_settings_path
+class SettingsWrapperBase:
+    s_dict: dict
     
-    util.save_json_config(path, settings_dict)
-
-
-def load_settings(path: Path = None, settings_dict: dict = current):
-    if path is None:
-        path = paths.rfa_user_settings_path
+    def __init__(self, s_dict: dict):
+        self.s_dict = s_dict
+        
+    def get(self, key: str) -> bool | int | float | str | list | dict:
+        return self.s_dict[key]
     
-    util.load_json_config(path, settings_dict)
+    def set(self, key: str, value: bool | int | float | str | list | dict):
+        self.s_dict[key] =  value
+    
+    def contains(self, key: str) -> bool:
+        return key in self.s_dict
+
+class SettingsWrapper(SettingsWrapperBase):
+    class PreprocessorSettings(SettingsWrapperBase):
+        
+        @property
+        def default_cmd(self):
+            return self.s_dict["default_cmd"]
+        
+        @default_cmd.setter
+        def default_cmd(self, value: str):
+            self.s_dict["default_cmd"] = value
+            
+        @property
+        def default_flags(self):
+            return self.s_dict["default_flags"]
+        
+        @default_flags.setter
+        def default_flags(self, value: str):
+            self.s_dict["default_flags"] = value
+    
+    preprocessing: PreprocessorSettings
+    paths = path_handler.PathHandler
+    
+    def __init__(self, s_dict: dict):
+        super().__init__(s_dict)
+        
+        self.preprocessing = SettingsWrapper.PreprocessorSettings(s_dict["preprocessing"])
+        self.paths = path_handler.PathHandler()
+
+    def load_paths(self):
+        self.paths.load_paths()
+    
+    def save_settings(self, path: Path = None, settings_dict: dict = None):
+        if path is None:
+            path = self.paths.rfa_user_settings_path
+            
+        if settings_dict is None:
+            settings_dict = self.s_dict
+        
+        util.save_json_config(path, settings_dict)
+
+
+    def load_settings(self, path: Path = None, settings_dict: dict = None):
+        if path is None:
+            path = self.paths.rfa_user_settings_path
+            
+        if settings_dict is None:
+            settings_dict = self.s_dict
+        
+        util.load_json_config(path, settings_dict)
+
+
+current = SettingsWrapper(default_settings_dict())
+
 

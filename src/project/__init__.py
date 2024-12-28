@@ -130,16 +130,17 @@ class PatchGenerator:
         print("Config Loaded.")
     # Processing:
 
-    def preprocess(self, out: io.TextIOWrapper = None):
-        if out is None:
-            out = sys.stdout
+    def preprocess(self):
 
         for i in self.process_specs:
+            output_path = i.out_file.with_suffix(".preproc" + i.out_file.suffix)
+            
             result = subprocess.run(
                 [self.preproc_command_path, str(i.in_file)]
+                + settings.current.preprocessing.default_flags
                 + self.preproc_flags
-                + [f"-I{i}" for i in self.includes],
-                stdout=out,
+                + [f"-I{i}" for i in self.includes]
+                + ["-o", str(output_path)],                
             )
             
             if result.returncode != 0:

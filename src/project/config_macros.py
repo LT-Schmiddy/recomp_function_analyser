@@ -1,6 +1,7 @@
 import shutil
 from typing import Union, Callable
 
+import settings
 
 class ConfigMacroProcessor:
     class ConfigMacroDef:
@@ -34,7 +35,7 @@ class ConfigMacroProcessor:
     
     def __init__(self):
         self.macros = [
-            ConfigMacroProcessor.ConfigMacroDef("DEFAULT_PREPROC", lambda: shutil.which("clang"))
+            ConfigMacroProcessor.ConfigMacroDef("DEFAULT_PREPROC", lambda: settings.current.preprocessing.default_cmd)
         ]
         
     def add_macro(self, name: str, value: str | Callable):

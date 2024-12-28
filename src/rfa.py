@@ -9,12 +9,12 @@ import commands
 
 
 def main():
-    settings.paths.load_paths()
+    settings.current.load_paths()
     
-    if util.mkdir_if_missing(settings.paths.rfa_user_dir):
+    if util.mkdir_if_missing(settings.current.paths.rfa_user_dir):
         print(f"Created rfa user directory at '{settings.paths.rfa_user_dir}'.")
         
-    settings.load_settings()
+    settings.current.load_settings()
 
     cmd_parser = commands.CommandProcessor()
 
@@ -22,7 +22,7 @@ def main():
 
     if result is None or (isinstance(result, int) and result == 0):
         util.print_color("green", "Command completed successfully!")
-        settings.save_settings()
+        settings.current.save_settings()
         sys.exit(0)
 
     elif isinstance(result, str):
