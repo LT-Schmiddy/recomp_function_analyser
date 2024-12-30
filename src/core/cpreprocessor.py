@@ -2,7 +2,6 @@ import sys, shutil
 from enum import IntEnum
 from types import FunctionType as function
 from collections import deque
-from constexpr_evaluator import ConstexprEvaluator
 from doubly_linked_list import DoublyLinkedList
 from copy import deepcopy
 
@@ -15,6 +14,230 @@ class MacroSection(IntEnum):
     MISC = 5
 
 class Preprocessor:
+    class ConstexprEvaluator:
+        class Associativity(IntEnum):
+            LEFT_TO_RIGHT = 0
+            RIGHT_TO_LEFT = 1
+
+        def __init__(self):
+            super().__init__()
+            self.cond_st : deque[int] = deque()
+
+        def handle_single_arg(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]], func : function):
+            if node.next:
+                (symbol, val) = node.next.val
+                if symbol == MacroSection.NUMBER:
+                    node.val = (MacroSection.NUMBER, func(val))
+                    constexpr.remove(node.next)
+                    return None
+            raise Exception("Invalid expression!")
+
+        def handle_double_arg(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]], func : function):
+            if node.prev and node.next:
+                (l_symbol, l_val) = node.prev.val
+                (r_symbol, r_val) = node.next.val
+                if l_symbol == MacroSection.NUMBER and r_symbol == MacroSection.NUMBER:
+                    node.val = (MacroSection.NUMBER, func(l_val, r_val))
+                    constexpr.remove(node.prev)
+                    constexpr.remove(node.next)
+                    return None
+            raise Exception("Invalid expression!")
+
+        def handle_PLUS(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_single_arg(constexpr, node, lambda x : x)
+
+        def handle_MINUS(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_single_arg(constexpr, node, lambda x : -x)
+
+        def handle_SUM(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_double_arg(constexpr, node, lambda x, y : x + y)
+
+        def handle_SUB(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_double_arg(constexpr, node, lambda x, y : x - y)
+
+        def handle_MUL(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_double_arg(constexpr, node, lambda x, y : x * y)
+
+        def handle_DIV(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_double_arg(constexpr, node, lambda x, y : x / y)
+
+        def handle_MOD(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_double_arg(constexpr, node, lambda x, y : x % y)
+
+        def handle_NOT(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_single_arg(constexpr, node, lambda x : not x)
+
+        def handle_CONDL(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            try:
+                z = self.cond_st.pop()
+            except IndexError:
+                raise Exception("Invalid expression!")
+            self.handle_double_arg(constexpr, node, lambda x, y : y if x else z)
+
+        def handle_CONDR(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_single_arg(constexpr, node, lambda x : self.cond_st.append(x))
+            constexpr.remove(node)
+
+        def handle_AND(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_double_arg(constexpr, node, lambda x, y : x and y)
+
+        def handle_OR(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_double_arg(constexpr, node, lambda x, y : x or y)
+
+        def handle_EQ(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_double_arg(constexpr, node, lambda x, y : x == y)
+
+        def handle_NEQ(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_double_arg(constexpr, node, lambda x, y : x != y)
+
+        def handle_LT(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_double_arg(constexpr, node, lambda x, y : x < y)
+
+        def handle_GT(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_double_arg(constexpr, node, lambda x, y : x > y)
+
+        def handle_LEQ(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_double_arg(constexpr, node, lambda x, y : x <= y)
+
+        def handle_GEQ(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_double_arg(constexpr, node, lambda x, y : x >= y)
+
+        def handle_BAND(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_double_arg(constexpr, node, lambda x, y : x & y)
+
+        def handle_BOR(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_double_arg(constexpr, node, lambda x, y : x | y)
+
+        def handle_BXOR(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_double_arg(constexpr, node, lambda x, y : x ^ y)
+
+        def handle_BNOT(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_single_arg(constexpr, node, lambda x : ~x)
+
+        def handle_BLSHFT(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_double_arg(constexpr, node, lambda x, y : x << y)
+
+        def handle_BRSHFT(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]], node : DoublyLinkedList.Node[tuple[MacroSection, str]]):
+            self.handle_double_arg(constexpr, node, lambda x, y : x >> y)
+
+        operators : dict[str, function] = {
+            'u+' : handle_PLUS,
+            'u-' : handle_MINUS,
+            '+' : handle_SUM,
+            '-' : handle_SUB,
+            '*' : handle_MUL,
+            '/' : handle_DIV,
+            '%' : handle_MOD,
+            '!' : handle_NOT,
+            '?' : handle_CONDL,
+            ':' : handle_CONDR,
+            '&&' : handle_AND,
+            '||' : handle_OR,
+            '==' : handle_EQ,
+            '!=' : handle_NEQ,
+            '<' : handle_LT,
+            '>' : handle_GT,
+            '<=' : handle_LEQ,
+            '>=' : handle_GEQ,
+            '&' : handle_BAND,
+            '|' : handle_BOR,
+            '^' : handle_BXOR,
+            '~' : handle_BNOT,
+            '<<' : handle_BLSHFT,
+            '>>' : handle_BRSHFT,
+        }
+
+        precedence : list[tuple[int, set[str]]] = [
+            (Associativity.RIGHT_TO_LEFT, {'u+', 'u-', '!', '~'}),
+            (Associativity.LEFT_TO_RIGHT, {'*', '/', '%'}),
+            (Associativity.LEFT_TO_RIGHT, {'+', '-'}),
+            (Associativity.LEFT_TO_RIGHT, {'<<', '>>'}),
+            (Associativity.LEFT_TO_RIGHT, {'<', '<=', '>', '>='}),
+            (Associativity.LEFT_TO_RIGHT, {'==', '!='}),
+            (Associativity.LEFT_TO_RIGHT, {'&'}),
+            (Associativity.LEFT_TO_RIGHT, {'^'}),
+            (Associativity.LEFT_TO_RIGHT, {'|'}),
+            (Associativity.LEFT_TO_RIGHT, {'&&'}),
+            (Associativity.LEFT_TO_RIGHT, {'||'}),
+            (Associativity.RIGHT_TO_LEFT, {'?', ':'}),
+        ]
+
+        def _eval_process_constexpr(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]]):
+            current = constexpr.begin
+            parenth_level = 0
+            f : DoublyLinkedList.Node[tuple[MacroSection, str]] = None
+            t : DoublyLinkedList.Node[tuple[MacroSection, str]] = None
+            while current != None:
+                (section, content) = current.val
+                if section == MacroSection.OPERATOR:
+                    if content == '(':
+                        if parenth_level == 0:
+                            f = current.next
+                        parenth_level += 1
+                        constexpr.remove(current)
+                    elif content == ')':
+                        parenth_level -= 1
+                        if parenth_level == 0:
+                            if f == current:
+                                raise Exception("Expected value in expression!")
+                            t = current.prev
+
+                            constexpr = constexpr.extract_list(f, t)
+                            current.val = (MacroSection.NUMBER, self._eval(constexpr))
+                        elif parenth_level < 0:
+                            raise Exception("Invalid expression!")
+                        else:
+                            constexpr.remove(current)
+                elif section == MacroSection.NUMBER:
+                    current.val = (section, int(content))
+                elif section == MacroSection.WHITESPACE:
+                    constexpr.remove(current)
+                current = current.next
+
+        def _eval_detect_unary_plus_minus(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]]):
+            prev = MacroSection.OPERATOR
+            current = constexpr.begin
+            while current != None:
+                (symbol, val) = current.val
+                if symbol == MacroSection.OPERATOR and prev == symbol and (val == '+' or val == '-'):
+                    current.val = (MacroSection.OPERATOR, 'u' + val)
+                prev = symbol
+                current = current.next
+
+        def _eval_process_operators(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]]):
+            for (associativity, symbol_set) in self.precedence:
+                if associativity == self.Associativity.LEFT_TO_RIGHT:
+                    current = constexpr.begin
+                else:
+                    current = constexpr.end
+
+                while current != None:
+                    (symbol, val) = current.val
+                    if symbol == MacroSection.OPERATOR and val in symbol_set:
+                        self.operators[val](self, constexpr, current)
+                    if associativity == self.Associativity.LEFT_TO_RIGHT:
+                        current = current.next
+                    else:
+                        current = current.prev
+
+            if len(self.cond_st) > 0:
+                raise Exception("Invalid expression!")
+
+        def _eval(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]]) -> int:
+            self._eval_process_constexpr(constexpr)
+            self._eval_detect_unary_plus_minus(constexpr)
+            self._eval_process_operators(constexpr)
+
+            if constexpr.begin != constexpr.end:
+                raise Exception("Invalid expression!")
+
+            return constexpr.begin.val[1]
+
+        def eval(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]]) -> int:
+            if constexpr.is_empty():
+                raise Exception("Expected value in expression!")
+            return self._eval(constexpr)
+
     class Macro:
         def get_string(self) -> str:
             pass
@@ -54,7 +277,8 @@ class Preprocessor:
             '|',
             '&&',
             '||',
-            '?:',
+            '?',
+            ':',
             '=',
             '+=',
             '-=',
@@ -84,7 +308,8 @@ class Preprocessor:
             self.source = source
             self.contents = self.parse(definition)
 
-        def parse(self, definition : str) -> DoublyLinkedList[tuple[MacroSection, str]]:
+        @staticmethod
+        def parse(definition : str) -> DoublyLinkedList[tuple[MacroSection, str]]:
             res : DoublyLinkedList[tuple[MacroSection, str]] = DoublyLinkedList()
 
             processed_section = MacroSection.WHITESPACE
@@ -103,11 +328,11 @@ class Preprocessor:
                 elif c.isnumeric():
                     if section != MacroSection.NAME:
                         section = MacroSection.NUMBER
-                elif c in self.operators:
+                elif c in Preprocessor.ObjectMacro.operators:
                     section = MacroSection.OPERATOR
                     if processed_section == MacroSection.OPERATOR:
                         tmp = buffer + c
-                        if tmp not in self.operators:
+                        if tmp not in Preprocessor.ObjectMacro.operators:
                             res.add_end((processed_section, buffer))
                             buffer = c
                 elif c in {'"', "'"}:
@@ -178,6 +403,17 @@ class Preprocessor:
                         break
                 current = current.next
 
+        def _solve_add_arg(self, arg : DoublyLinkedList[tuple[MacroSection, str]], args : list[DoublyLinkedList[tuple[MacroSection, str]]]):
+            begin = arg.begin
+            if begin != None and begin.val[0] == MacroSection.WHITESPACE:
+                arg.remove(begin)
+
+            end = arg.end
+            if end != None and end.val[0] == MacroSection.WHITESPACE:
+                arg.remove(end)
+
+            args += [arg]
+
         def _solve_handle_functionMacro(self, used : set[str], macro, contents : DoublyLinkedList[tuple[MacroSection, str]], start : DoublyLinkedList.Node[tuple[MacroSection, str]]) -> tuple[DoublyLinkedList[tuple[MacroSection, str]], DoublyLinkedList.Node[tuple[MacroSection, str]]]:
             current = start.next
             if current != None:
@@ -202,16 +438,7 @@ class Preprocessor:
                                     t = current
                                 else:
                                     arg = contents.extract_list(f, t)
-
-                                    begin = arg.begin
-                                    if begin != None and begin.val[0] == MacroSection.WHITESPACE:
-                                        arg.remove(begin)
-
-                                    end = arg.end
-                                    if end != None and end.val[0] == MacroSection.WHITESPACE:
-                                        arg.remove(end)
-
-                                    args += [arg]
+                                    self._solve_add_arg(arg, args)
 
                                     contents.remove(current)
                                     break
@@ -220,16 +447,7 @@ class Preprocessor:
                                     t = current
                                 else:
                                     arg = contents.extract_list(f, t)
-
-                                    begin = arg.begin
-                                    if begin != None and begin.val[0] == MacroSection.WHITESPACE:
-                                        arg.remove(begin)
-
-                                    end = arg.end
-                                    if end != None and end.val[0] == MacroSection.WHITESPACE:
-                                        arg.remove(end)
-
-                                    args += [arg]
+                                    self._solve_add_arg(arg, args)
 
                                     contents.remove(current)
                                     current = current.next
@@ -338,6 +556,45 @@ class Preprocessor:
                         break
                 current = current.next
 
+        def _solve_perform_concatenation_get_left_arg(self, args : list[DoublyLinkedList[tuple[MacroSection, str]]], contents : DoublyLinkedList[tuple[MacroSection, str]], current : DoublyLinkedList.Node[tuple[MacroSection, str]]) -> tuple[DoublyLinkedList.Node[tuple[MacroSection, str]], MacroSection, str]:
+            left = current.prev.prev
+            (l_section, l_content) = left.val
+            (left, l_section, l_content) = self._solve_remove_space(contents, left, l_section, l_content)
+
+            if l_section == MacroSection.NAME:
+                arg = self._solve_get_arg(args, l_content)
+                if arg != None:
+                    if arg.is_empty():
+                        left = None
+                    else:
+                        contents.add_list_before(deepcopy(arg), left)
+                        contents.remove(left)
+                        left = left.prev
+                        (l_section, l_content) = left.val
+            return (left, l_section, l_content)
+
+        def _solve_perform_concatenation_get_right_arg(self, args : list[DoublyLinkedList[tuple[MacroSection, str]]], contents : DoublyLinkedList[tuple[MacroSection, str]], current : DoublyLinkedList.Node[tuple[MacroSection, str]]) -> tuple[DoublyLinkedList.Node[tuple[MacroSection, str]], MacroSection, str]:
+            right = current
+            (r_section, r_content) = right.val
+            (right, r_section, r_content) = self._solve_remove_space(contents, right, r_section, r_content)
+
+            end = right
+
+            if r_section == MacroSection.NAME:
+                arg = self._solve_get_arg(args, r_content)
+                if arg != None:
+                    if arg.is_empty():
+                        right = None
+                    else:
+                        arg = deepcopy(arg)
+                        end = arg.end
+
+                        contents.add_list_after(arg, right)
+                        contents.remove(right)
+                        right = right.next
+                        (r_section, r_content) = right.val
+            return (right, r_section, r_content, end)
+
         def _solve_perform_concatenation_f(self, args : list[DoublyLinkedList[tuple[MacroSection, str]]], contents : DoublyLinkedList[tuple[MacroSection, str]]):
             current = contents.begin
             while current != None:
@@ -346,40 +603,8 @@ class Preprocessor:
                     operator = current
                     current = current.next
                     if current != None:
-                        left = current.prev.prev
-                        (l_section, l_content) = left.val
-                        (left, l_section, l_content) = self._solve_remove_space(contents, left, l_section, l_content)
-
-                        if l_section == MacroSection.NAME:
-                            arg = self._solve_get_arg(args, l_content)
-                            if arg != None:
-                                if arg.is_empty():
-                                    left = None
-                                else:
-                                    contents.add_list_before(deepcopy(arg), left)
-                                    contents.remove(left)
-                                    left = left.prev
-                                    (l_section, l_content) = left.val
-
-                        right = current
-                        (r_section, r_content) = right.val
-                        (right, r_section, r_content) = self._solve_remove_space(contents, right, r_section, r_content)
-
-                        end = right
-
-                        if r_section == MacroSection.NAME:
-                            arg = self._solve_get_arg(args, r_content)
-                            if arg != None:
-                                if arg.is_empty():
-                                    right = None
-                                else:
-                                    arg = deepcopy(arg)
-                                    end = arg.end
-
-                                    contents.add_list_after(arg, right)
-                                    contents.remove(right)
-                                    right = right.next
-                                    (r_section, r_content) = right.val
+                        (left, l_section, l_content) = self._solve_perform_concatenation_get_left_arg(args, contents, current)
+                        (right, r_section, r_content, end) = self._solve_perform_concatenation_get_right_arg(args, contents, current)
 
                         if left == None:
                             contents.remove(left)
@@ -485,8 +710,6 @@ class Preprocessor:
             print("%s : %s" % (n, Preprocessor.ObjectMacro.contents_to_string(m.contents)))
         print("\n")
 
-
-
 if __name__ == "__main__":
     include_dirs = [
         'mm',
@@ -498,13 +721,10 @@ if __name__ == "__main__":
     # file = 'mm/src/code/z_message.c'
     file = 'test/test.c'
 
-    # e = ConstexprEvaluator()
-    # val = e.eval("(2 + 2 * 2) * 10 == 6 ? 10 : 7")
-    # print(val)
-
-
     p = Preprocessor(include_dirs)
     # p.exec(file)
+
+    #Macro test
 
     #define STR(X) #X
     p.add_FunctionMacro("STR", None, "#X", ["X"])
@@ -521,9 +741,16 @@ if __name__ == "__main__":
     p.add_ObjectMacro("OM", None, "6")
 
     # TEST4(  BO  , OM    BO     ,   OM  )
-    m_1 = p.add_ObjectMacro("_1", None, "  BO  ")
-    m_2 = p.add_ObjectMacro("_2", None, " OM    BO     ")
-    m_3 = p.add_ObjectMacro("_3", None, "   OM  ")
+    m_1 = Preprocessor.ObjectMacro.parse("  BO  ")
+    m_2 = Preprocessor.ObjectMacro.parse(" OM    BO     ")
+    m_3 = Preprocessor.ObjectMacro.parse("   OM  ")
 
     # "(521) 5" "BOOM BO" "6 5" "BOOM BO 5"
-    print(Preprocessor.ObjectMacro.contents_to_string(test4.solve([m_1.contents, m_2.contents, m_3.contents])))
+    print(Preprocessor.ObjectMacro.contents_to_string(test4.solve([m_1, m_2, m_3])))
+
+
+    #ConstexprEvaluator test
+
+    e = Preprocessor.ConstexprEvaluator()
+    val = e.eval(Preprocessor.ObjectMacro.parse("(2 + 2 * 2) * 10 == 6 ? 10 : 7"))
+    print(val)
