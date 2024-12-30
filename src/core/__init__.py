@@ -32,7 +32,7 @@ class Scanner(NodeVisitor):
             super().__init__()
             self.parent : Scanner = parent
 
-        def visit_FuncCall(self, node):
+        def visit_FuncCall(self, node : Node):
             name : Node = node.name
             if isinstance(name, ID):
                 self.parent.functions.add(name.name)
@@ -40,15 +40,15 @@ class Scanner(NodeVisitor):
                 self.visit(name)
 
             args : Node = node.args
-            if args is not None:
+            if args != None:
                 self.visit(args)
 
-        def visit_ID(self, node):
+        def visit_ID(self, node : Node):
             name : str = node.name
             if name not in self.local_variables:
                 self.parent.variables.add(name)
 
-        def visit_Compound(self, node):
+        def visit_Compound(self, node : Node):
             prev_level_variables = self.current_level_variables
             self.current_level_variables = set()
 
@@ -63,22 +63,22 @@ class Scanner(NodeVisitor):
             self.local_variables -= self.current_level_variables
             self.current_level_variables = prev_level_variables
 
-        def visit_Decl(self, node):
+        def visit_Decl(self, node : Node):
             self.local_variables.add(node.name)
             self.current_level_variables.add(node.name)
 
             self.visit(node.type)
 
-        def visit_IdentifierType(self, node):
+        def visit_IdentifierType(self, node : Node):
             self.parent.types.update(set(node.names))
 
-        def visit_Struct(self, node):
+        def visit_Struct(self, node : Node):
             self.handle_struct_union(node, self.parent.structs)
 
-        def visit_Union(self, node):
+        def visit_Union(self, node : Node):
             self.handle_struct_union(node, self.parent.unions)
 
-        def visit_Enum(self, node):
+        def visit_Enum(self, node : Node):
             name : str = node.name
             values = node.values
             if values != None:
@@ -94,7 +94,7 @@ class Scanner(NodeVisitor):
                 self.parent.enums.add(Scanner.TAG_PREFIX + name)
 
 
-        def handle_struct_union(self, node, symbols : set[str]):
+        def handle_struct_union(self, node : Node, symbols : set[str]):
             name : str = node.name
             decls = node.decls
 
@@ -108,10 +108,10 @@ class Scanner(NodeVisitor):
             elif name != None and name not in self.local_tags:
                 symbols.add(Scanner.TAG_PREFIX + name)
 
-        def visit_StructRef(self, node):
+        def visit_StructRef(self, node : Node):
             self.visit(node.name)
 
-        def visit_FuncDecl(self, node):
+        def visit_FuncDecl(self, node : Node):
             for param in node.args.params:
                 self.visit(param.type)
             self.visit(node.type)
@@ -124,7 +124,7 @@ class Scanner(NodeVisitor):
         for func in funcs:
             self.searchin_funcs.add(func)
 
-    def visit_FuncDef(self, node):
+    def visit_FuncDef(self, node : Node):
         name = node.decl.name
         is_tracked = False
 
@@ -156,7 +156,7 @@ class Scanner(NodeVisitor):
             self.coord[name] = node.coord
 
 
-    def visit_Decl(self, node):
+    def visit_Decl(self, node : Node):
         name = node.name
         t = node.type
         if isinstance(t, FuncDecl):
@@ -189,7 +189,7 @@ class Scanner(NodeVisitor):
             # struct or union declaration
                 self.handle_nested_struct_union_declarations(t, node.coord, [])
 
-    def visit_Typedef(self, node):
+    def visit_Typedef(self, node : Node):
         name = node.name
         if name in self.types:
             self.coord[name] = node.coord
@@ -217,7 +217,7 @@ class Scanner(NodeVisitor):
         return node
 
 
-    def handle_enum_declaration(self, node, origin_coord : str):
+    def handle_enum_declaration(self, node : Node, origin_coord : str):
         values = node.values
         if values != None:
             name = node.name
@@ -229,7 +229,7 @@ class Scanner(NodeVisitor):
                 if name in self.variables:
                     self.coord[name] = origin_coord
 
-    def handle_nested_struct_union_declarations(self, node, origin_coord : str, gather_stash : list):
+    def handle_nested_struct_union_declarations(self, node : Node, origin_coord : str, gather_stash : list):
         node = self.skip_array_ptr_declaration(node)
         if isinstance(node, TypeDecl):
             node = node.type
@@ -261,10 +261,10 @@ class Scanner(NodeVisitor):
         else:
             self.v_gatherSymbols.visit(node)
 
-    def generic_visit(self, node):
+    def generic_visit(self, node : Node):
         return None
 
-    def exec(self, node):
+    def exec(self, node : Node):
         for c in reversed([i for i in node]):
             self.visit(c)
 
