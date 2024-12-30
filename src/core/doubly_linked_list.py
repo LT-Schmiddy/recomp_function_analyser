@@ -96,7 +96,7 @@ class DoublyLinkedList(Generic[T]):
             self.end = list.end
         else:
             next.prev = list.end
-            list.end.prev = next
+            list.end.next = next
         list.begin = None
         list.end = None
 
@@ -115,10 +115,9 @@ class DoublyLinkedList(Generic[T]):
         res = DoublyLinkedList()
         res.begin = f
         res.end = t
+        f.prev = None
+        t.next = None
         return res
-
-
-
 
     # def add_after(self, node : Node[T], val):
     #     node.next =

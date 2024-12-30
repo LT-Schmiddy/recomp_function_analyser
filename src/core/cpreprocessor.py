@@ -186,7 +186,7 @@ class Preprocessor:
                     contents.remove(current)
                     current = current.next
 
-                    parenth_level = 0
+                    parenth_level = 1
                     args : list[DoublyLinkedList[tuple[MacroSection, str]]] = []
                     f = current
                     t = None
@@ -194,14 +194,24 @@ class Preprocessor:
                         (section, content) = current.val
                         if section == MacroSection.OPERATOR:
                             if content == '(':
-                                t = current
                                 parenth_level += 1
+                                t = current
                             elif content == ')':
+                                parenth_level -= 1
                                 if parenth_level > 0:
                                     t = current
-                                    parenth_level -= 1
                                 else:
-                                    args += contents.extract_list(f, t)
+                                    arg = contents.extract_list(f, t)
+
+                                    begin = arg.begin
+                                    if begin != None and begin.val[0] == MacroSection.WHITESPACE:
+                                        arg.remove(begin)
+
+                                    end = arg.end
+                                    if end != None and end.val[0] == MacroSection.WHITESPACE:
+                                        arg.remove(end)
+
+                                    args += [arg]
 
                                     contents.remove(current)
                                     break
@@ -219,7 +229,7 @@ class Preprocessor:
                                     if end != None and end.val[0] == MacroSection.WHITESPACE:
                                         arg.remove(end)
 
-                                    args += arg
+                                    args += [arg]
 
                                     contents.remove(current)
                                     current = current.next
@@ -235,8 +245,7 @@ class Preprocessor:
 
                     if parenth_level > 0:
                         raise Exception("unterminated function-like macro invocation")
-
-                    return (macro._replace(args, used), current)
+                    return (macro._copy_and_solve(args, used), current)
                 return (None, current)
             return (None, current)
 
@@ -245,12 +254,16 @@ class Preprocessor:
             while current != None:
                 (section, content) = current.val
                 if section == MacroSection.NAME:
-                    macro = Preprocessor.macros[content]
+                    macro = Preprocessor.macros.get(content)
                     if macro != None and content not in used:
                         used.add(content)
                         if isinstance(macro, Preprocessor.FunctionMacro):
-                            (list, current) = self._copy_and_solve(used, macro, contents, current)
+                            start = current
+
+                            (list, current) = self._solve_handle_functionMacro(used, macro, contents, current)
+
                             contents.add_list_before(list, current)
+                            contents.remove(start)
                         elif isinstance(macro, Preprocessor.ObjectMacro):
                             contents.add_list_before(macro._copy_and_solve(used), current)
                         else:
@@ -287,9 +300,13 @@ class Preprocessor:
             self.args = {arg: i for (i, arg) in enumerate(args)}
 
         def _solve_get_arg(self, args : list[DoublyLinkedList[tuple[MacroSection, str]]], name : str) -> DoublyLinkedList[tuple[MacroSection, str]]:
-            pos = self.args[name]
+            pos = self.args.get(name)
             if pos != None:
-                return args[pos]
+                try:
+                    arg = args[pos]
+                    return arg
+                except IndexError:
+                    return None
             return None
 
         def _solve_remove_space(self, contents : DoublyLinkedList[tuple[MacroSection, str]], current : DoublyLinkedList.Node[tuple[MacroSection, str]], section : MacroSection, content : str) -> tuple[DoublyLinkedList.Node[tuple[MacroSection, str]], MacroSection, str]:
@@ -321,7 +338,7 @@ class Preprocessor:
                         break
                 current = current.next
 
-        def _solve_perform_concatenation(self, args : list[DoublyLinkedList[tuple[MacroSection, str]]], contents : DoublyLinkedList[tuple[MacroSection, str]]):
+        def _solve_perform_concatenation_f(self, args : list[DoublyLinkedList[tuple[MacroSection, str]]], contents : DoublyLinkedList[tuple[MacroSection, str]]):
             current = contents.begin
             while current != None:
                 (section, content) = current.val
@@ -339,9 +356,10 @@ class Preprocessor:
                                 if arg.is_empty():
                                     left = None
                                 else:
-                                    contents.add_list_before(arg, left)
+                                    contents.add_list_before(deepcopy(arg), left)
                                     contents.remove(left)
                                     left = left.prev
+                                    (l_section, l_content) = left.val
 
                         right = current
                         (r_section, r_content) = right.val
@@ -355,11 +373,13 @@ class Preprocessor:
                                 if arg.is_empty():
                                     right = None
                                 else:
+                                    arg = deepcopy(arg)
                                     end = arg.end
 
                                     contents.add_list_after(arg, right)
                                     contents.remove(right)
                                     right = right.next
+                                    (r_section, r_content) = right.val
 
                         if left == None:
                             contents.remove(left)
@@ -403,7 +423,7 @@ class Preprocessor:
 
         def _solve(self, args : list[DoublyLinkedList[tuple[MacroSection, str]]], contents: DoublyLinkedList[tuple[MacroSection, str]], used : set[str]):
             self._solve_perform_stringification(args, contents)
-            self._solve_perform_concatenation(args, contents)
+            self._solve_perform_concatenation_f(args, contents)
             self._solve_replace_args(args, contents, used)
             super()._solve_replace_macros(contents, used)
 
@@ -459,6 +479,12 @@ class Preprocessor:
         self.preprocess(f.read())
         f.close()
 
+    @staticmethod
+    def print_macros():
+        for n, m in Preprocessor.macros.items():
+            print("%s : %s" % (n, Preprocessor.ObjectMacro.contents_to_string(m.contents)))
+        print("\n")
+
 
 
 if __name__ == "__main__":
@@ -468,15 +494,6 @@ if __name__ == "__main__":
 
         'mm/assets',
     ]
-
-    l = [0, 1, 0, 0, 0]
-
-    lp = l
-    for index, val in reversed(list(enumerate(lp))):
-        if val == 0:
-            l[index] = 2
-
-    print(l)
 
     # file = 'mm/src/code/z_message.c'
     file = 'test/test.c'
@@ -494,18 +511,19 @@ if __name__ == "__main__":
     #define STRX(X) STR(X)
     p.add_FunctionMacro("STRX", None, "STR(X)", ["X"])
     #define TEST4(_1, _2, _3) STRX(_1##_2) STR(_1##_2) STR(_2) STR(_1##_2 _1)
-    macro = p.add_FunctionMacro("STRX", None, "STRX(_1##_2) STR(_1##_2) STR(_2) STR(_1##_2 _1)", ["_1", "_2", "_3"])
+    test4 = p.add_FunctionMacro("TEST4", None, "STRX(_1##_2) STR(_1##_2) STR(_2) STR(_1##_2 _1)", ["_1", "_2", "_3"])
 
-    #define NAWIAS (5)
-    p.add_ObjectMacro("NAWIAS", None, "(5)")
-    #define NA 5
-    p.add_ObjectMacro("NA", None, "5")
-    #define WIAS 6
-    p.add_ObjectMacro("WIAS", None, "6")
+    #define BOOM (5)
+    p.add_ObjectMacro("BOOM", None, "(521)")
+    #define Bo 5
+    p.add_ObjectMacro("BO", None, "5")
+    #define OM 6
+    p.add_ObjectMacro("OM", None, "6")
 
-    # TEST4( NA, WIAS NA, WIAS)
-    m_1 = p.add_ObjectMacro("_1", None, " NA")
-    m_2 = p.add_ObjectMacro("_2", None, " WIAS NA")
-    m_3 = p.add_ObjectMacro("_3", None, " WIAS")
+    # TEST4(  BO  , OM    BO     ,   OM  )
+    m_1 = p.add_ObjectMacro("_1", None, "  BO  ")
+    m_2 = p.add_ObjectMacro("_2", None, " OM    BO     ")
+    m_3 = p.add_ObjectMacro("_3", None, "   OM  ")
 
-    print(Preprocessor.ObjectMacro.contents_to_string(macro.solve([m_1.contents, m_2.contents, m_3.contents])))
+    # "(521) 5" "BOOM BO" "6 5" "BOOM BO 5"
+    print(Preprocessor.ObjectMacro.contents_to_string(test4.solve([m_1.contents, m_2.contents, m_3.contents])))
