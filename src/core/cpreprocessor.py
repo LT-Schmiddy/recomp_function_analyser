@@ -1,4 +1,4 @@
-import sys, shutil
+import sys, shutil, os
 from enum import IntEnum
 from types import FunctionType as function
 from collections import deque
@@ -162,7 +162,7 @@ class Preprocessor:
             (Associativity.RIGHT_TO_LEFT, {'?', ':'}),
         ]
 
-        def _eval_process_constexpr(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]]):
+        def _eval_simplify_constexpr(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]]):
             current = constexpr.begin
             parenth_level = 0
             f : DoublyLinkedList.Node[tuple[MacroSection, str]] = None
@@ -224,7 +224,7 @@ class Preprocessor:
                 raise Exception("Invalid expression!")
 
         def _eval(self, constexpr : DoublyLinkedList[tuple[MacroSection, str]]) -> int:
-            self._eval_process_constexpr(constexpr)
+            self._eval_simplify_constexpr(constexpr)
             self._eval_detect_unary_plus_minus(constexpr)
             self._eval_process_operators(constexpr)
 
@@ -631,7 +631,6 @@ class Preprocessor:
                         break
                 current = current.next
 
-
         def _solve_replace_args(self, args : list[DoublyLinkedList[tuple[MacroSection, str]]], contents : DoublyLinkedList[tuple[MacroSection, str]], used : set[str]):
             for arg in args:
                 super()._solve(arg, used)
@@ -660,36 +659,290 @@ class Preprocessor:
         def solve(self, args : list[DoublyLinkedList[tuple[MacroSection, str]]]) -> DoublyLinkedList[tuple[MacroSection, str]]:
             return self._copy_and_solve(args, set())
 
+    tabsize = 4
     macros : dict[str, Macro] = {}
-    include_paths : list[str]
+    include : list[str]
 
-    def __init__(self, include_paths):
+    def __init__(self, include_dirs : list[str]):
         super().__init__()
-        self.include_paths = include_paths
 
-    def add_ObjectMacro(self, name : str, source, definition : str):
+        self.include = []
+
+        included = { "" }
+        for dir in include_dirs:
+            while len(dir) > 0:
+                prefix = dir[:2]
+                print(prefix)
+                if prefix in { ".", "./" }:
+                    dir = dir[2:]
+                else:
+                    break
+            if dir not in included:
+                included.add(dir)
+                self.include += [dir]
+
+        print(self.include)
+
+    def add_ObjectMacro(self, name : str, source, definition : str) -> ObjectMacro:
         macro = self.ObjectMacro(source, definition)
-        self.macros[name] = macro
+        Preprocessor.macros[name] = macro
         return macro
 
-    def add_FunctionMacro(self, name : str, source, definition : str, args : list[str]):
+    def add_FunctionMacro(self, name : str, source, definition : str, args : list[str]) -> FunctionMacro:
         macro = self.FunctionMacro(source, definition, args)
-        self.macros[name] = macro
+        Preprocessor.macros[name] = macro
         return macro
 
     class CodeSection(IntEnum):
         DIRECTIVE = 0
         CODE = 1
         COMMENT = 2
-        WHITESPACE = 3
+        LINE_COMMENT = 3
+        WHITESPACE = 4
 
-    def split_code(self, code : str) -> list[tuple[CodeSection, str, int, int]]:
+    def handle_DEFINE(self, contents : str):
+        pass
+
+    def handle_UNDEF(self, contents : str):
+        pass
+
+    def handle_IFDEF(self, contents : str):
+        pass
+
+    def handle_IFNDEF(self, contents : str):
+        pass
+
+    def handle_ELIF(self, contents : str):
+        pass
+
+    def handle_ELSE(self, contents : str):
+        pass
+
+    def handle_ENDIF(self, contents : str):
+        pass
+
+    def handle_INCLUDE(self, contents : str):
+        pass
+
+    def handle_PRAGMA(self, contents : str):
+        pass
+
+    directives = {
+        "#define" : handle_DEFINE,
+        "#undef" : handle_UNDEF,
+        "#if" : handle_IFDEF,
+        "#ifdef" : handle_IFDEF,
+        "#ifndef" : handle_IFNDEF,
+        "#elif" : handle_ELIF,
+
+        # C23
+        # "#elifdef" : handle_ELIF,
+        # "#elifndef" : handle_ELIF,
+
+        "#else" : handle_ELSE,
+        "#endif" : handle_ENDIF,
+        "#include" : handle_INCLUDE,
+
+        # TODO?
+        # "#error" : handle_ERROR,
+
+        # C23
+        # "#warning" : handle_WARNING,
+
+        # TODO?
+        "#pragma" : handle_PRAGMA,
+        # "#line" : handle_LINE,
+
+        # C23
+        # "#embed" : handle_EMBED,
+    }
+
+    def handle_directive(self, directive : str, code : str, line : int, pos : int):
+        split = directive.split(' ', 1)
+        dir = split[0]
+        if len(split) > 1:
+            contents = split[1]
+        else:
+            contents = ''
+
+        print("%s\nwith contents %s\nat %d, %d\n" % (dir, contents, line, pos))
+        try:
+            self.directives[dir](self, contents)
+        except KeyError:
+            raise Exception("Invalid directive!")
+
+    def _check_for_newline(self, c : str, line : int, pos : int) -> tuple[bool, int, int]:
+        if c == '\n':
+            pos = 1
+            line += 1
+            return (True, line, pos)
+        pos += 1
+        return (False, line, pos)
+
+    def _check_for_comment_start(self, code: str, c : str, i : int, end : int, buf : list[str], buf_code : list[str]) -> tuple[bool, CodeSection | int]:
+        if c == '/':
+            buf_code += [c]
+            i += 1
+            if i < end:
+                _c = code[i]
+                if _c == '*':
+                    buf_code += [_c]
+                    return (True, self.CodeSection.COMMENT)
+                elif _c == '/':
+                    buf_code += [_c]
+                    return (True, self.CodeSection.LINE_COMMENT)
+                buf += [c]
+                return (False, i)
+        return (False, i)
+
+    def _read_DIRECTIVE(self, code: str, i : int, end : int, c : str, buf : list[str], buf_code : list[str], line : int, pos : int) -> tuple[bool, CodeSection, int]:
+        section = self.CodeSection.DIRECTIVE
+        cont = False
+        (is_comment, res) = self._check_for_comment_start(code, c, i, end, buf, buf_code)
+        if is_comment:
+            section = res
+        else:
+            i = res
+            if i < end:
+                c = code[i]
+                buf_code += [c]
+
+                (is_newline, line, pos) = self._check_for_newline(c, line, pos)
+                if is_newline:
+                    self.handle_directive(''.join(buf), ''.join(buf_code), line, pos)
+                    section = self.CodeSection.WHITESPACE
+                    buf.clear()
+                    buf_code.clear()
+                elif c == '\\':
+                    i += 1
+                    if i < end:
+                        c = code[i]
+
+                        (is_newline, line, pos) = self._check_for_newline(c, line, pos)
+                        if is_newline:
+                            buf_code += [c]
+                            buf += [' ']
+                        else:
+                            buf += ['\\']
+                            cont = True
+                elif c == ' ' or c == '\t':
+                    buf += [c]
+                else:
+                    buf += [c]
+        return (cont, section, i, line, pos)
+
+    def _read_COMMENT(self, code: str, i : int, end : int, c : str, buf_code : list[str], line : int, pos : int) -> tuple[CodeSection, int, int, int]:
+        section = self.CodeSection.COMMENT
+        buf_code += [c]
+        (is_newline, line, pos) = self._check_for_newline(c, line, pos)
+        if c == '*':
+            i += 1
+            if i < end:
+                c = code[i]
+                buf_code += [c]
+                (is_newline, line, pos) = self._check_for_newline(c, line, pos)
+                if c == '/':
+                    # TODO Handle Comments
+                    section = self.CodeSection.WHITESPACE
+                    buf_code.clear()
+        return (section, i, line, pos)
+
+    def _read_LINE_COMMENT(self, c : str, buf_code : list[str], line : int, pos : int) -> tuple[CodeSection, int, int]:
+        section = self.CodeSection.LINE_COMMENT
+        buf_code += [c]
+        (is_newline, line, pos) = self._check_for_newline(c, line, pos)
+        if is_newline:
+            # TODO Handle Comments
+            section = self.CodeSection.WHITESPACE
+            buf_code.clear()
+        return (section, line, pos)
+
+    def _read_WHITESPACE(self, code: str, i : int, end : int, c : str, buf : list[str], buf_code : list[str], line : int, pos : int, transition_to_code_allowed : bool) -> tuple[CodeSection, int, int, int]:
+        section = self.CodeSection.WHITESPACE
+
+        tmp_buf = []
+        tmp_buf_code = []
+        (is_comment, res) = self._check_for_comment_start(code, c, i, end, tmp_buf, tmp_buf_code)
+        if is_comment:
+            buf_code += tmp_buf_code
+            section = res
+        elif transition_to_code_allowed and len(buf) > 0:
+            # Invalid code
+            buf += tmp_buf
+            buf_code += tmp_buf_code
+            section = self.CodeSection.CODE
+        else:
+            i = res
+            if i < end:
+                c = code[i]
+
+                (is_newline, line, pos) = self._check_for_newline(c, line, pos)
+                if not is_newline:
+                    if c == '#':
+                        section = self.CodeSection.DIRECTIVE
+                        buf += tmp_buf + [c]
+                        buf_code += tmp_buf_code + [c]
+                    elif transition_to_code_allowed:
+                        section = self.CodeSection.CODE
+                        buf += tmp_buf + [c]
+                        buf_code += tmp_buf_code + [c]
+        return (section, i, line, pos)
+
+    def read_include(self, code : str) -> list[tuple[CodeSection, str, int, int]]:
         sections : list[tuple[int, int, self.CodeSection, str]] = []
 
-        line : int = 0
-        char : int = 0
-        pos : int = 0
-        # while(len(code) > 0):
+        line = 1
+        pos = 1
+
+        buf : list[str] = []
+        buf_code : list[str] = []
+
+        section = self.CodeSection.WHITESPACE
+        end = len(code)
+        i = 0
+        while i < end:
+            c = code[i]
+            match section:
+                case self.CodeSection.DIRECTIVE:
+                    (cont, section, i, line, pos) = self._read_DIRECTIVE(code, i, end, c, buf, buf_code, line, pos)
+                    if cont:
+                        continue
+                case self.CodeSection.COMMENT:
+                    (section, i, line, pos) = self._read_COMMENT(code, i, end, c, buf_code, line, pos)
+                case self.CodeSection.LINE_COMMENT:
+                    (section, line, pos) = self._read_LINE_COMMENT(c, buf_code, line, pos)
+                case self.CodeSection.WHITESPACE:
+                    (section, i, line, pos) = self._read_WHITESPACE(code, i, end, c, buf, buf_code, line, pos, False)
+            i += 1
+
+    def read(self, code : str) -> list[tuple[CodeSection, str, int, int]]:
+        sections : list[tuple[int, int, self.CodeSection, str]] = []
+
+        line = 1
+        pos = 1
+
+        buf : list[str] = []
+        buf_code : list[str] = []
+
+        section = self.CodeSection.WHITESPACE
+        end = len(code)
+        i = 0
+        while i < end:
+            c = code[i]
+            match section:
+                case self.CodeSection.DIRECTIVE:
+                    (cont, section, i, line, pos) = self._read_DIRECTIVE(code, i, end, c, buf, buf_code, line, pos)
+                    if cont:
+                        continue
+                # case self.CodeSection.CODE:
+                case self.CodeSection.COMMENT:
+                    (section, i, line, pos) = self._read_COMMENT(code, i, end, c, buf_code)
+                case self.CodeSection.LINE_COMMENT:
+                    (section, line, pos) = self._read_LINE_COMMENT(c, buf_code)
+                case self.CodeSection.WHITESPACE:
+                    (section, i, line, pos) = self._read_WHITESPACE(code, i, end, c, buf, buf_code, line, pos, True)
+
+            i += 1
 
     def preprocess(self, code : str):
         code = code.replace("\r\n", "\n")
@@ -697,7 +950,7 @@ class Preprocessor:
         # Line splicing
         # Tokenization
         # Macro expansion and directive handling
-        print(code)
+        self.read_include(code)
 
     def exec(self, file):
         f = open(file)
@@ -713,18 +966,18 @@ class Preprocessor:
 if __name__ == "__main__":
     include_dirs = [
         'mm',
-        'mm/include',# p = Preprocessor(include_dirs)
-
+        'mm/include',
         'mm/assets',
+        '.',
+        './',
+        './mm',
     ]
 
-    # file = 'mm/src/code/z_message.c'
-    file = 'test/test.c'
+    file = 'mm/src/code/z_message.c'
 
     p = Preprocessor(include_dirs)
-    # p.exec(file)
 
-    #Macro test
+    # Macro test
 
     #define STR(X) #X
     p.add_FunctionMacro("STR", None, "#X", ["X"])
@@ -749,8 +1002,11 @@ if __name__ == "__main__":
     print(Preprocessor.ObjectMacro.contents_to_string(test4.solve([m_1, m_2, m_3])))
 
 
-    #ConstexprEvaluator test
+    # ConstexprEvaluator test
 
     e = Preprocessor.ConstexprEvaluator()
     val = e.eval(Preprocessor.ObjectMacro.parse("(2 + 2 * 2) * 10 == 6 ? 10 : 7"))
     print(val)
+
+    # Preprocessor test
+    p.exec(file)
