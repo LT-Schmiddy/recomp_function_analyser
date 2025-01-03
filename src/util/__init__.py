@@ -1,4 +1,4 @@
-import os, json, sys
+import os, json, sys, typing
 from pathlib import Path
 
 from colors import *
@@ -14,18 +14,12 @@ def mkdir_if_missing(dir_path: str) -> bool:
     
     return False
 
-def list_contains(p_filter, p_list):
+def list_contains(p_filter: typing.Callable, p_list: typing.Iterable):
     for x in p_list:
         if p_filter(x):
             return True
     return False
 
-def list_get(p_filter, p_list):
-    retVal = []
-    for x in p_list:
-        if p_filter(x):
-            retVal.append(x)
-    return retVal
 
 def print_color(fg: str, *args, **kwargs):
     p_list = []
