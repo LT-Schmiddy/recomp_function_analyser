@@ -1,9 +1,7 @@
-import sys, os, shutil, json, subprocess, io
-from typing import Union, Callable
+import shutil, subprocess
 from pathlib import Path
 
 import pycparser
-from pycparser import c_generator
 import util
 import settings
 from core import Scanner
