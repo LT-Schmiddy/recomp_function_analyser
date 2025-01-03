@@ -6,7 +6,7 @@ import pycparser
 from pycparser import c_generator
 import util
 import settings
-from core.ast_code_generator import TestVisitor
+from core import Scanner
 from .config_macros import ConfigMacroProcessor
 
 class PatchGenerator:
@@ -146,24 +146,46 @@ class PatchGenerator:
 
 
     def generate(self):
-        for i in self.process_specs:
+        for spec in self.process_specs:
             ast = pycparser.parse_file(
-                i.in_file,
-                use_cpp=i.preprocess,
+                spec.in_file,
+                use_cpp=spec.preprocess,
                 cpp_path=self.preproc_command_path,
-                cpp_args=self.preproc_flags
+                cpp_args=settings.current.preprocessing.default_flags + self.preproc_flags
                 + [f"-I{i}" for i in self.includes]
             )
 
-            test = TestVisitor(i.functions)
-            test.analyse(ast)
+            v = Scanner(spec.functions)
+            v.exec(ast)
             
-            generator = c_generator.CGenerator()
-            out_str = ""            
-            for j in reversed(test.func_decl_nodes):
-                out_str += generator.visit(j.param_decls) + ";\n"
-                out_str += generator.visit(j.decl) + ";\n"
+            for name, node in v.filter_nodes_by_source(spec.in_file).items():
+                print(name)
                 
-            i.out_file.write_text(out_str)
+            for name, node in v.filter_tag_nodes_by_source(spec.in_file).items():
+                print(name)
+        
+        
+        def print_scanner(self, scanner: Scanner):
+            coord = scanner.node
+            tag_coord = scanner.tag_node
+            print('[SYMBOLS]\n')
+            for node in scanner.types:
+                print('(type) %s\nat %s\n' % (node, coord[node].coord if node in coord else 'UNKNOWN'))
+
+            for var in scanner.variables:
+                print('(variable) %s\nat %s\n' % (var, coord[var].coord if var in coord else 'UNKNOWN'))
+
+            for func in scanner.functions:
+                print('(function) %s\nat %s\n' % (func, coord[func].coord if func in coord else 'UNKNOWN'))
+
+            print('[TAGS]\n')
+            for struct in scanner.structs:
+                print('(struct) %s\nat %s\n' % (struct, tag_coord[struct].coord if struct in tag_coord else 'UNKNOWN'))
+
+            for union in scanner.unions:
+                print('(union) %s\nat %s\n' % (union, tag_coord[union].coord if union in tag_coord else 'UNKNOWN'))
+
+            for enum in scanner.enums:
+                print('(enum) %s\nat %s\n' % (enum, tag_coord[enum].coord if enum in tag_coord else 'UNKNOWN'))
                 
 

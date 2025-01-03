@@ -1,4 +1,5 @@
-import sys, shutil
+import sys, shutil, typing
+from pathlib import Path
 from pycparser import parse_file
 from pycparser.c_ast import *
 
@@ -267,6 +268,13 @@ class Scanner(NodeVisitor):
     def exec(self, node : Node):
         for c in reversed([i for i in node]):
             self.visit(c)
+               
+    def filter_nodes_by_source(self, source_path: Path) -> dict[str, Node]:
+        return dict(filter(lambda entry: Path(entry[1].coord.file) == source_path, self.node.items()))
+    
+    def filter_tag_nodes_by_source(self, source_path: Path) -> dict[str, Node]:
+        return dict(filter(lambda entry: Path(entry[1].coord.file) == source_path, self.tag_node.items()))
+    
 
 if __name__ == '__main__':
     filename = 'mm/src/code/z_message.c'
