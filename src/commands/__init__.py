@@ -11,7 +11,7 @@ class SubCommandBase:
 
     def __init__(self, parser: argparse.ArgumentParser):
         self.parser = parser
-        self.parser.set_defaults(process_func=lambda args: self.process(args))
+        self.parser.set_defaults(subcommand_func=lambda args: self.process(args))
         self.setup_args()
         
     def setup_args(self):
@@ -42,8 +42,8 @@ class CommandProcessor:
 
     def process(self, cmd: list[str]) -> Any:
         args = self.parser.parse_args(cmd)
-        if hasattr(args, "process_func"):
-            return args.process_func(args)
+        if hasattr(args, "subcommand_func"):
+            return args.subcommand_func(args)
         
         return None
 
@@ -53,3 +53,4 @@ class CommandProcessorArgs(argparse.Namespace):
 
 # Importing all commands here:
 from .patching_cmds import *
+from .settings_cmds import *

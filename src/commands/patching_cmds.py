@@ -48,9 +48,8 @@ class PreprocessCommand(SubCommandBase):
     def process(self, args: GeneratePatchCommandArgs) -> Any:
         new_config = project.PatchGenerator(args.config_path.parent, config_dict=json.loads(args.config_path.read_text()))
         
-        new_config.preprocess()
+        return new_config.preprocess()
         
-        return None
     
 
 

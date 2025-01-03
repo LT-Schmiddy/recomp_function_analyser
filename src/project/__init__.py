@@ -131,7 +131,6 @@ class PatchGenerator:
     # Processing:
 
     def preprocess(self):
-
         for i in self.process_specs:
             output_path = i.out_file.with_suffix(".preproc" + i.out_file.suffix)
             
@@ -143,10 +142,8 @@ class PatchGenerator:
                 + ["-o", str(output_path)],                
             )
             
-            if result.returncode != 0:
-                return result.returncode
-            
-        
+            return result.returncode
+
 
     def generate(self):
         for i in self.process_specs:
