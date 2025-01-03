@@ -12,14 +12,14 @@ class Scanner(NodeVisitor):
     variables = set()
     types = set()
 
-    coord = {}
+    node = {}
 
     # Tags
     structs = set()
     unions = set()
     enums = set()
 
-    tag_coord = {}
+    tag_node = {}
 
     class GatherSymbols(NodeVisitor):
         local_variables : set[str] = set()
@@ -153,7 +153,7 @@ class Scanner(NodeVisitor):
                 for param in args.params:
                     self.v_gatherSymbols.visit(param.type)
             self.v_gatherSymbols.visit(t.type)
-            self.coord[name] = node.coord
+            self.node[name] = node
 
 
     def visit_Decl(self, node : Node):
@@ -171,7 +171,7 @@ class Scanner(NodeVisitor):
 
             if is_tracked:
                 self.v_gatherSymbols.visit(t)
-                self.coord[name] = node.coord
+                self.node[name] = node
         else:
             t = self.skip_array_ptr_declaration(t)
 
@@ -179,20 +179,20 @@ class Scanner(NodeVisitor):
             # variable declaration
                 t = t.type
                 if name in self.variables:
-                    self.coord[name] = node.coord
+                    self.node[name] = node
                     self.v_gatherSymbols.visit(node.type)
 
             if isinstance(t, Enum):
             # enum declaration
-                self.handle_enum_declaration(t, node.coord)
+                self.handle_enum_declaration(t, node)
             else:
             # struct or union declaration
-                self.handle_nested_struct_union_declarations(t, node.coord, [])
+                self.handle_nested_struct_union_declarations(t, node, [])
 
     def visit_Typedef(self, node : Node):
         name = node.name
         if name in self.types:
-            self.coord[name] = node.coord
+            self.node[name] = node
             t = node.type.type
             t = self.skip_array_ptr_declaration(t)
 
@@ -202,9 +202,9 @@ class Scanner(NodeVisitor):
             if isinstance(t, IdentifierType):
                 self.types.update(set(t.names))
             elif isinstance(t, Enum):
-                self.handle_enum_declaration(t, node.coord)
+                self.handle_enum_declaration(t, node)
             else:
-                self.handle_nested_struct_union_declarations(t, node.coord, None)
+                self.handle_nested_struct_union_declarations(t, node, None)
         else:
             # handle this like a normal declaration
             self.visit_Decl(node)
@@ -217,19 +217,19 @@ class Scanner(NodeVisitor):
         return node
 
 
-    def handle_enum_declaration(self, node : Node, origin_coord : str):
+    def handle_enum_declaration(self, node : Node, origin_node : Node):
         values = node.values
         if values != None:
             name = node.name
             if name != None:
                 name = Scanner.TAG_PREFIX + name
-                self.tag_coord[name] = origin_coord
+                self.tag_node[name] = origin_node
             for enumerator in values.enumerators:
                 name = enumerator.name
                 if name in self.variables:
-                    self.coord[name] = origin_coord
+                    self.node[name] = origin_node
 
-    def handle_nested_struct_union_declarations(self, node : Node, origin_coord : str, gather_stash : list):
+    def handle_nested_struct_union_declarations(self, node : Node, origin_node : Node, gather_stash : list):
         node = self.skip_array_ptr_declaration(node)
         if isinstance(node, TypeDecl):
             node = node.type
@@ -251,11 +251,11 @@ class Scanner(NodeVisitor):
             decls = node.decls
             if decls != None:
                 if name != None:
-                    self.tag_coord[name] = origin_coord
+                    self.tag_node[name] = origin_node
                 for decl in decls:
-                    self.handle_nested_struct_union_declarations(decl.type, origin_coord, gather_stash)
+                    self.handle_nested_struct_union_declarations(decl.type, origin_node, gather_stash)
         elif isinstance(node, Enum):
-            self.handle_enum_declaration(node, origin_coord)
+            self.handle_enum_declaration(node, origin_node)
         elif gather_stash != None:
             gather_stash += [node]
         else:
@@ -301,24 +301,24 @@ if __name__ == '__main__':
     v = Scanner(funcnames)
     v.exec(ast)
 
-    coord = v.coord
-    tag_coord = v.tag_coord
+    coord = v.node
+    tag_coord = v.tag_node
     print('[SYMBOLS]\n')
     for node in v.types:
-        print('(type) %s\nat %s\n' % (node, coord[node] if node in coord else 'UNKNOWN'))
+        print('(type) %s\nat %s\n' % (node, coord[node].coord if node in coord else 'UNKNOWN'))
 
     for var in v.variables:
-        print('(variable) %s\nat %s\n' % (var, coord[var] if var in coord else 'UNKNOWN'))
+        print('(variable) %s\nat %s\n' % (var, coord[var].coord if var in coord else 'UNKNOWN'))
 
     for func in v.functions:
-        print('(function) %s\nat %s\n' % (func, coord[func] if func in coord else 'UNKNOWN'))
+        print('(function) %s\nat %s\n' % (func, coord[func].coord if func in coord else 'UNKNOWN'))
 
     print('[TAGS]\n')
     for struct in v.structs:
-        print('(struct) %s\nat %s\n' % (struct, tag_coord[struct] if struct in tag_coord else 'UNKNOWN'))
+        print('(struct) %s\nat %s\n' % (struct, tag_coord[struct].coord if struct in tag_coord else 'UNKNOWN'))
 
     for union in v.unions:
-        print('(union) %s\nat %s\n' % (union, tag_coord[union] if union in tag_coord else 'UNKNOWN'))
+        print('(union) %s\nat %s\n' % (union, tag_coord[union].coord if union in tag_coord else 'UNKNOWN'))
 
     for enum in v.enums:
-        print('(enum) %s\nat %s\n' % (enum, tag_coord[enum] if enum in tag_coord else 'UNKNOWN'))
+        print('(enum) %s\nat %s\n' % (enum, tag_coord[enum].coord if enum in tag_coord else 'UNKNOWN'))
