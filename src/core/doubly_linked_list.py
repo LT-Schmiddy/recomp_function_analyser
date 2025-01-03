@@ -11,7 +11,6 @@ class DoublyLinkedList(Generic[T]):
             self.prev : DoublyLinkedList.Node[T]  = prev
             self.next : DoublyLinkedList.Node[T]  = next
 
-
     def __init__(self):
         super().__init__()
         self.begin : DoublyLinkedList.Node[T] = None
@@ -118,6 +117,3 @@ class DoublyLinkedList(Generic[T]):
         f.prev = None
         t.next = None
         return res
-
-    # def add_after(self, node : Node[T], val):
-    #     node.next =
