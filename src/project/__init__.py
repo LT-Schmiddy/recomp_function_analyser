@@ -5,6 +5,7 @@ import pycparser
 import util
 import settings
 from core import Scanner
+from core.cpreprocessor import Preprocessor
 from .config_macros import ConfigMacroProcessor
 
 class PatchGenerator:
@@ -126,7 +127,32 @@ class PatchGenerator:
             for i in load_dict["process_specs"]
         ]
         print("Config Loaded.")
+        
     # Processing:
+    def print_scanner(self, scanner: Scanner):
+        coord = scanner.node
+        tag_coord = scanner.tag_node
+        print('[SYMBOLS]\n')
+        for node in scanner.types:
+            print('(type) %s\nat %s\n' % (node, coord[node].coord if node in coord else 'UNKNOWN'))
+
+        for var in scanner.variables:
+            print('(variable) %s\nat %s\n' % (var, coord[var].coord if var in coord else 'UNKNOWN'))
+
+        for func in scanner.functions:
+            print('(function) %s\nat %s\n' % (func, coord[func].coord if func in coord else 'UNKNOWN'))
+
+        print('[TAGS]\n')
+        for struct in scanner.structs:
+            print('(struct) %s\nat %s\n' % (struct, tag_coord[struct].coord if struct in tag_coord else 'UNKNOWN'))
+
+        for union in scanner.unions:
+            print('(union) %s\nat %s\n' % (union, tag_coord[union].coord if union in tag_coord else 'UNKNOWN'))
+
+        for enum in scanner.enums:
+            print('(enum) %s\nat %s\n' % (enum, tag_coord[enum].coord if enum in tag_coord else 'UNKNOWN'))
+                
+
 
     def preprocess(self):
         for i in self.process_specs:
@@ -153,37 +179,16 @@ class PatchGenerator:
                 + [f"-I{i}" for i in self.includes]
             )
 
-            v = Scanner(spec.functions)
-            v.exec(ast)
+            scanner = Scanner(spec.functions)
+            scanner.exec(ast)
             
-            for name, node in v.filter_nodes_by_source(spec.in_file).items():
+            for name, node in scanner.filter_nodes_by_source(spec.in_file).items():
                 print(name)
                 
-            for name, node in v.filter_tag_nodes_by_source(spec.in_file).items():
+            for name, node in scanner.filter_tag_nodes_by_source(spec.in_file).items():
                 print(name)
-        
-        
-        def print_scanner(self, scanner: Scanner):
-            coord = scanner.node
-            tag_coord = scanner.tag_node
-            print('[SYMBOLS]\n')
-            for node in scanner.types:
-                print('(type) %s\nat %s\n' % (node, coord[node].coord if node in coord else 'UNKNOWN'))
-
-            for var in scanner.variables:
-                print('(variable) %s\nat %s\n' % (var, coord[var].coord if var in coord else 'UNKNOWN'))
-
-            for func in scanner.functions:
-                print('(function) %s\nat %s\n' % (func, coord[func].coord if func in coord else 'UNKNOWN'))
-
-            print('[TAGS]\n')
-            for struct in scanner.structs:
-                print('(struct) %s\nat %s\n' % (struct, tag_coord[struct].coord if struct in tag_coord else 'UNKNOWN'))
-
-            for union in scanner.unions:
-                print('(union) %s\nat %s\n' % (union, tag_coord[union].coord if union in tag_coord else 'UNKNOWN'))
-
-            for enum in scanner.enums:
-                print('(enum) %s\nat %s\n' % (enum, tag_coord[enum].coord if enum in tag_coord else 'UNKNOWN'))
-                
+            
+            include_strs = [str(include).replace("\\", "/") for include in self.includes]
+            preproc = Preprocessor(include_strs)
+            preproc.exec(spec.in_file)
 

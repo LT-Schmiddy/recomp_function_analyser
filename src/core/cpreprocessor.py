@@ -2,7 +2,7 @@ import sys, shutil, os
 from enum import IntEnum
 from types import FunctionType as function
 from collections import deque
-from doubly_linked_list import DoublyLinkedList
+from .doubly_linked_list import DoublyLinkedList
 from copy import deepcopy
 
 class MacroSection(IntEnum):
@@ -887,7 +887,67 @@ class Preprocessor:
                         buf += tmp_buf + [c]
                         buf_code += tmp_buf_code + [c]
         return (section, i, line, pos)
+    
+    def _read_CODE(
+        self,
+        code: str,
+        i: int,
+        end: int,
+        c: str,
+        buf: list[str],
+        buf_code: list[str],
+        line: int,
+        pos: int,
+        brace_level: int,
+        parentheses_level: int,
+        watch_for_func_def: bool,
+        is_func_def: bool,
+    ) -> tuple[bool, CodeSection, int]:
+        section = self.CodeSection.CODE
+        cont = False
 
+        if i < end:
+            c = code[i]
+            buf += [c]
+            buf_code += [c]
+
+            function_ended = False
+            # Function Watching:
+            if c == "{":
+                brace_level += 1
+                if watch_for_func_def:
+                    watch_for_func_def = False
+                    is_func_def = True
+
+            elif c == "}":
+                brace_level -= 1
+                if is_func_def and brace_level == 0:
+                    is_func_def = False
+                    function_ended = True
+
+            elif c == "(":
+                parentheses_level += 1
+
+            elif c == ")":
+                if brace_level == 0:
+                    watch_for_func_def = True
+                parentheses_level -= 1
+
+            elif not c.isspace():
+                watch_for_func_def = False
+
+            
+            (is_newline, line, pos) = self._check_for_newline(c, line, pos)
+            if not is_newline:
+                if (function_ended) or (c == ";" and brace_level == 0):
+                    section = self.CodeSection.WHITESPACE
+                    out_str = "".join(buf_code)
+                    print("****\n" + out_str)
+                    buf.clear()
+                    buf_code.clear()
+        return (cont, section, i, line, pos, brace_level, parentheses_level, watch_for_func_def, is_func_def)
+    
+    
     def read_include(self, code : str) -> list[tuple[CodeSection, str, int, int]]:
         sections : list[tuple[int, int, self.CodeSection, str]] = []
 
@@ -915,34 +975,70 @@ class Preprocessor:
                     (section, i, line, pos) = self._read_WHITESPACE(code, i, end, c, buf, buf_code, line, pos, False)
             i += 1
 
-    def read(self, code : str) -> list[tuple[CodeSection, str, int, int]]:
-        sections : list[tuple[int, int, self.CodeSection, str]] = []
+    
+    def read(self, code: str) -> list[tuple[CodeSection, str, int, int]]:
+        sections: list[tuple[int, int, self.CodeSection, str]] = []
 
         line = 1
         pos = 1
 
-        buf : list[str] = []
-        buf_code : list[str] = []
+        buf: list[str] = []
+        buf_code: list[str] = []
+
+        # Level handling and function definition processing.
+        brace_level = 0
+        parentheses_level = 0
+
+        watch_for_func_def = False
+        is_func_def = False
 
         section = self.CodeSection.WHITESPACE
         end = len(code)
         i = 0
         while i < end:
-            c = code[i]
+            c: str = code[i]
+
             match section:
                 case self.CodeSection.DIRECTIVE:
-                    (cont, section, i, line, pos) = self._read_DIRECTIVE(code, i, end, c, buf, buf_code, line, pos)
+                    (cont, section, i, line, pos) = self._read_DIRECTIVE(
+                        code, i, end, c, buf, buf_code, line, pos
+                    )
                     if cont:
                         continue
-                # case self.CodeSection.CODE:
                 case self.CodeSection.COMMENT:
-                    (section, i, line, pos) = self._read_COMMENT(code, i, end, c, buf_code)
+                    (section, i, line, pos) = self._read_COMMENT(
+                        code, i, end, c, buf_code, line, pos
+                    )
                 case self.CodeSection.LINE_COMMENT:
-                    (section, line, pos) = self._read_LINE_COMMENT(c, buf_code)
+                    (section, line, pos) = self._read_LINE_COMMENT(
+                        c, buf_code, line, pos
+                    )
                 case self.CodeSection.WHITESPACE:
-                    (section, i, line, pos) = self._read_WHITESPACE(code, i, end, c, buf, buf_code, line, pos, True)
-
+                    (section, i, line, pos) = self._read_WHITESPACE(
+                        code, i, end, c, buf, buf_code, line, pos, True
+                    )
+                case self.CodeSection.CODE:
+                    (cont, section, i, line, pos, brace_level, parentheses_level, watch_for_func_def, is_func_def) = (
+                        self._read_CODE(
+                            code,
+                            i,
+                            end,
+                            c,
+                            buf,
+                            buf_code,
+                            line,
+                            pos,
+                            brace_level,
+                            parentheses_level,
+                            watch_for_func_def,
+                            is_func_def
+                        )
+                    )
+                    if cont:
+                        continue
             i += 1
+        if brace_level != 0:
+            print("BRACE_MISMATCH!")
 
     def preprocess(self, code : str):
         code = code.replace("\r\n", "\n")
@@ -950,7 +1046,8 @@ class Preprocessor:
         # Line splicing
         # Tokenization
         # Macro expansion and directive handling
-        self.read_include(code)
+        # self.read_include(code)
+        self.read(code)
 
     def exec(self, file):
         f = open(file)
