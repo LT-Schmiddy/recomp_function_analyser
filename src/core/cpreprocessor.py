@@ -5,8 +5,21 @@ from collections import deque
 from copy import deepcopy
 from pathlib import Path
 
-from macro import MacroSection, MacroExpression, MacroExpressionNode, Macro, ObjectMacro, FunctionMacro, VariadicMacro, MacroSource, ExternalSource, CodeSource
-from constexpr_evaluator import ConstexprEvaluator
+from .macro import MacroSection, MacroExpression, MacroExpressionNode, Macro, ObjectMacro, FunctionMacro, VariadicMacro, MacroSource, ExternalSource, CodeSource
+from .constexpr_evaluator import ConstexprEvaluator
+
+class FunctionDefState(IntEnum):
+    OUTSIDE = 0
+    WATCHING = 1
+    INSIDE = 2    
+
+class SectionCoords:
+    line: int = 0
+    pos: int = 0
+    
+    def __init__(self, line: int = 0, pos: int = 0):
+        self.line = line
+        self.pos = pos
 
 class Preprocessor:
 <<<<<<< HEAD
@@ -666,17 +679,24 @@ class Preprocessor:
     }
 
     tabsize = 4
-    include : list[str]
+    include_dirs : list[str]
+    recurse_includes: bool
+    sections: dict[str, str]
 
     def _add_predefined_macros(self):
         # TODO Implement
         self.new_ObjectMacro("__STDC_VERSION__", ExternalSource("predefined"), "199901L")
 
+<<<<<<< HEAD
     def __init__(self, include_dirs : list[str]):
 >>>>>>> e321247 (add directive handling (not working))
+=======
+    def __init__(self, include_dirs : list[str], recurse_includes = True):
+>>>>>>> 457f990 (preprocessor code analysis prototype)
         super().__init__()
         self.include_paths = include_paths
 
+<<<<<<< HEAD
 <<<<<<< HEAD
     def add_ObjectMacro(self, name : str, source, definition : str):
         macro = self.ObjectMacro(source, definition)
@@ -689,6 +709,13 @@ class Preprocessor:
         return macro
 =======
         self.include = []
+=======
+        self.recurse_includes = recurse_includes
+        self.sections = {}
+        # self.top_level_includes = []
+        
+        self.include_dirs = []
+>>>>>>> 457f990 (preprocessor code analysis prototype)
         self.conditionalSegment = None
         self.cond_st : deque[int] = deque()
         self.inactive_level = 0
@@ -707,7 +734,7 @@ class Preprocessor:
                     break
             if dir not in included:
                 included.add(dir)
-                self.include += [dir]
+                self.include_dirs += [dir]
 
     def add_Macro(self, name : str, macro : Macro) -> Macro:
         if name in self.forbidden_macro_names:
@@ -1007,7 +1034,7 @@ class Preprocessor:
                 # find the file using the algorithm specified in the standard
                 # https://en.cppreference.com/w/c/preprocessor/include
                 file : str = None
-                for dir in include_dirs:
+                for dir in self.include_dirs:
                     path = os.path.join(dir, name_dir)
                     for root, dir, files in os.walk(path):
                         if name_file in files:
@@ -1021,18 +1048,20 @@ class Preprocessor:
                 text = Path(file).read_text()
                 self.files[contents] = text
 
+            if self.recurse_includes:
+                cond_st = self.cond_st
+                inactive_level = self.inactive_level
 
-            cond_st = self.cond_st
-            inactive_level = self.inactive_level
+                self.cond_st : deque[int] = deque()
+                self.inactive_level = 0
 
-            self.cond_st : deque[int] = deque()
-            self.inactive_level = 0
+                self.read_include(text)
 
-            self.read_include(text)
-
-            self.cond_st = cond_st
-            self.inactive_level = inactive_level
-
+                self.cond_st = cond_st
+                self.inactive_level = inactive_level
+            # else:
+                # self.top_level_includes.append()
+            
             return None
 
         raise Exception("Invalid include directive!")
@@ -1219,6 +1248,49 @@ class Preprocessor:
                         buf_code += tmp_buf_code + [c]
         return (section, i, line, pos)
 
+    def _read_CODE(self, code: str, i : int, end : int, c : str, buf : list[str], buf_code : list[str], line : int, pos : int, brace_level: int, parentheses_level: int, func_def_state: FunctionDefState) -> tuple[CodeSection, int, int, int]:
+        section = self.CodeSection.CODE
+
+        if i < end:
+            c = code[i]
+            buf += [c]
+            buf_code += [c]
+
+            function_ended = False
+            # Function Watching:
+            if c == "{":
+                brace_level += 1
+                if func_def_state == FunctionDefState.WATCHING:
+                    func_def_state = FunctionDefState.INSIDE
+
+            elif c == "}":
+                brace_level -= 1
+                if func_def_state == FunctionDefState.INSIDE and brace_level == 0:
+                    func_def_state = FunctionDefState.OUTSIDE
+                    function_ended = True
+
+            elif c == "(":
+                parentheses_level += 1
+
+            elif c == ")":
+                if brace_level == 0:
+                    func_def_state = FunctionDefState.WATCHING
+                parentheses_level -= 1
+
+            elif not c.isspace():
+                func_def_state = FunctionDefState.OUTSIDE
+            
+            is_newline, line, pos = self._check_for_newline(c, line, pos)
+            if not is_newline:
+                if (function_ended) or (c == ";" and brace_level == 0):
+                    section = self.CodeSection.WHITESPACE
+                    out_str = "".join(buf_code)
+                    print("****\n" + out_str)
+                    buf.clear()
+                    buf_code.clear()
+                    
+        return (section, i, line, pos, brace_level, parentheses_level, func_def_state)
+    
     def read_include(self, code : str) -> list[tuple[CodeSection, str, int, int]]:
         code = code.replace("\r\n", "\n")
 
@@ -1251,7 +1323,12 @@ class Preprocessor:
 
         line = 1
         pos = 1
+        section_coords = SectionCoords(line, pos)
 
+        brace_level = 0
+        parentheses_level = 0
+        func_def_state = FunctionDefState.OUTSIDE
+        
         buf : list[str] = []
         buf_code : list[str] = []
 
@@ -1265,13 +1342,14 @@ class Preprocessor:
                     (cont, section, i, line, pos) = self._read_DIRECTIVE(code, i, end, c, buf, buf_code, line, pos)
                     if cont:
                         continue
-                # case self.CodeSection.CODE:
                 case self.CodeSection.COMMENT:
-                    (section, i, line, pos) = self._read_COMMENT(code, i, end, c, buf_code)
+                    (section, i, line, pos) = self._read_COMMENT(code, i, end, c, buf_code, line, pos)
                 case self.CodeSection.LINE_COMMENT:
-                    (section, line, pos) = self._read_LINE_COMMENT(c, buf_code)
+                    (section, line, pos) = self._read_LINE_COMMENT(c, buf_code, line, pos)
                 case self.CodeSection.WHITESPACE:
-                    (section, i, line, pos) = self._read_WHITESPACE(code, i, end, c, buf, buf_code, line, pos, True)
+                    (section, i, line, pos) = self._read_WHITESPACE(code, i, end, c, buf, buf_code, line, pos, False)
+                case self.CodeSection.CODE:
+                    (section, i, line, pos, brace_level, parentheses_level, func_def_state) = self._read_CODE(code, i, end, c, buf, buf_code, line, pos, brace_level, parentheses_level, func_def_state)
 
             i += 1
 >>>>>>> e321247 (add directive handling (not working))

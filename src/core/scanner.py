@@ -275,6 +275,19 @@ class Scanner(NodeVisitor):
     def filter_tag_nodes_by_source(self, source_path: Path) -> dict[str, Node]:
         return dict(filter(lambda entry: Path(entry[1].coord.file) == source_path, self.tag_node.items()))
     
+    def collect_includes(self) -> list[Path]:
+        retVal = set()
+        
+        for name, node in reversed(self.tag_node.items()):
+            retVal.add(Path(node.coord.file))
+            # retVal.add(node.coord.file.replace("\\\\", "/"))
+        
+        for name, node in reversed(self.node.items()):
+            retVal.add(Path(node.coord.file))
+            # retVal.add(node.coord.file.replace("\\\\", "/"))
+        
+        return retVal
+    
 
 if __name__ == '__main__':
     filename = 'mm/src/code/z_message.c'
