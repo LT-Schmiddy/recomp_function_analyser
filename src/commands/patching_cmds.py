@@ -2,7 +2,8 @@ import sys, os, subprocess, argparse, shutil, json, io
 from typing import Any
 from pathlib import Path
 
-import project
+from project import ProjectConfig
+from project.patch_generator import PatchGenerator
 import util
 
 from commands import SubCommandBase, CommandProcessorArgs
@@ -22,7 +23,7 @@ class CreateConfigCommand(SubCommandBase):
         self.parser.add_argument('output', type=argparse.FileType('w', encoding='UTF-8'))
 
     def process(self, args: CreateConfigCommandArgs) -> Any:
-        new_config = project.PatchGenerator.default_config_dict()
+        new_config = ProjectConfig.default_config_dict()
         
         json.dump(new_config, args.output, indent=4)
         args.output.close()
@@ -46,11 +47,8 @@ class PreprocessCommand(SubCommandBase):
         # self.parser.add_argument('--output', "-o", type=argparse.FileType('w', encoding='UTF-8'), default=None)
 
     def process(self, args: GeneratePatchCommandArgs) -> Any:
-        new_config = project.PatchGenerator(args.config_path.parent, config_dict=json.loads(args.config_path.read_text()))
-        
-        return new_config.preprocess()
-        
-    
+        new_config = ProjectConfig(args.config_path.parent, config_dict=json.loads(args.config_path.read_text()))
+        new_config.preprocess()  
 
 
 class GeneratePatchCommand(SubCommandBase):
@@ -69,10 +67,11 @@ class GeneratePatchCommand(SubCommandBase):
         self.parser.add_argument('--output', "-o", type=argparse.FileType('w', encoding='UTF-8'), default=None)
 
     def process(self, args: GeneratePatchCommandArgs) -> Any:
-        new_config = project.PatchGenerator(args.config_path.parent, config_dict=json.loads(args.config_path.read_text()))
+        new_config = ProjectConfig(args.config_path.parent, config_dict=json.loads(args.config_path.read_text()))
+        generator =  PatchGenerator(new_config)
         
-        new_config.generate()
-        
+        # generator.includes_and_ast()
+        generator.scanner_and_cpreprocessor()
         
         return None
     

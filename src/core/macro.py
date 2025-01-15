@@ -1,6 +1,6 @@
 import sys, shutil, os
 from enum import IntEnum
-from doubly_linked_list import DoublyLinkedList
+from .doubly_linked_list import DoublyLinkedList
 from copy import deepcopy
 
 class MacroSection(IntEnum):

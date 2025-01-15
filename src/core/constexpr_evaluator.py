@@ -2,10 +2,10 @@ import sys, shutil, os
 from enum import IntEnum
 from types import FunctionType as function
 from collections import deque
-from doubly_linked_list import DoublyLinkedList
+from .doubly_linked_list import DoublyLinkedList
 from copy import deepcopy
 from pathlib import Path
-from macro import MacroExpression, MacroExpressionNode, MacroSection
+from .macro import MacroExpression, MacroExpressionNode, MacroSection
 
 class ConstexprEvaluator:
     class Associativity(IntEnum):
