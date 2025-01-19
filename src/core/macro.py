@@ -3,6 +3,8 @@ from enum import IntEnum
 from .doubly_linked_list import DoublyLinkedList
 from copy import deepcopy
 
+FUNCTION_MACRO_PREFIX = '*'
+
 class MacroSection(IntEnum):
     WHITESPACE = 0
     NAME = 1
@@ -280,7 +282,22 @@ class ObjectMacro(Macro):
         while current != None:
             (section, content) = current.val
             if section == MacroSection.NAME:
-                macro = self.macros.get(content)
+                name = content
+                func_name = FUNCTION_MACRO_PREFIX + name
+
+                macro = None
+
+                next = current.next
+                if next != None:
+                    (section, content) = next.val
+                    if section == MacroSection.OPERATOR and content == '(':
+                        macro = self.macros.get(func_name)
+
+                if macro != None:
+                    name = func_name
+                else:
+                    macro = self.macros.get(content)
+
                 if macro != None and content not in used:
                     used.add(content)
                     if isinstance(macro, FunctionMacro):

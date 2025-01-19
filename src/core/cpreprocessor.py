@@ -1,25 +1,17 @@
-import sys, shutil
+import sys, shutil, os
 from enum import IntEnum
 from types import FunctionType as function
 from collections import deque
 from copy import deepcopy
 from pathlib import Path
 
-from .macro import MacroSection, MacroExpression, MacroExpressionNode, Macro, ObjectMacro, FunctionMacro, VariadicMacro, MacroSource, ExternalSource, CodeSource
+from .macro import MacroSection, MacroExpression, MacroExpressionNode, Macro, ObjectMacro, FunctionMacro, VariadicMacro, MacroSource, ExternalSource, CodeSource, FUNCTION_MACRO_PREFIX
 from .constexpr_evaluator import ConstexprEvaluator
 
 class FunctionDefState(IntEnum):
     OUTSIDE = 0
     WATCHING = 1
     INSIDE = 2
-
-class SectionCoords:
-    line: int = 0
-    pos: int = 0
-
-    def __init__(self, line: int = 0, pos: int = 0):
-        self.line = line
-        self.pos = pos
 
 class Preprocessor:
     forbidden_macro_names = {
@@ -35,19 +27,17 @@ class Preprocessor:
         # TODO Implement
         self.new_ObjectMacro("__STDC_VERSION__", ExternalSource("predefined"), "199901L")
 
-    def __init__(self, include_dirs : list[str], recurse_includes = True):
+    def __init__(self, include_dirs : list[str], standard_c_lib_dir : str, recurse_includes = True):
         super().__init__()
 
         self.recurse_includes = recurse_includes
         self.sections = {}
-        # self.top_level_includes = []
 
         self.include_dirs = []
         self.conditionalSegment = None
         self.cond_st : deque[int] = deque()
         self.inactive_level = 0
         self.macros : dict[str, Macro] = {}
-        self.files : dict[str, str] = {}
 
         self._add_predefined_macros()
 
@@ -63,20 +53,24 @@ class Preprocessor:
                 included.add(dir)
                 self.include_dirs += [dir]
 
-    def add_Macro(self, name : str, macro : Macro) -> Macro:
+        if standard_c_lib_dir not in included:
+            included.add(dir)
+            self.include_dirs += [dir]
+
+    def new_Macro(self, name : str, macro : Macro) -> Macro:
         if name in self.forbidden_macro_names:
             raise Exception("Forbidden macro name!")
         self.macros[name] = macro
         return macro
 
     def new_ObjectMacro(self, name : str, source : MacroSource, definition : str) -> ObjectMacro:
-        return self.add_Macro(name, ObjectMacro(self.macros, source, definition))
+        return self.new_Macro(name, ObjectMacro(self.macros, source, definition))
 
     def new_FunctionMacro(self, name : str, source : MacroSource, definition : str, args : list[str]) -> FunctionMacro:
-        return self.add_Macro(name, FunctionMacro(self.macros, source, definition, args))
+        return self.new_Macro(FUNCTION_MACRO_PREFIX + name, FunctionMacro(self.macros, source, definition, args))
 
     def new_VariadicMacro(self, name : str, source : MacroSource, definition : str, args : list[str]) -> FunctionMacro:
-        return self.add_Macro(name, VariadicMacro(self.macros, source, definition, args))
+        return self.new_Macro(FUNCTION_MACRO_PREFIX + name, VariadicMacro(self.macros, source, definition, args))
 
     def print_macros(self):
         for n, m in self.macros.items():
@@ -92,7 +86,8 @@ class Preprocessor:
         DIRECTIVE = 0
         CODE = 1
         COMMENT = 2
-        WHITESPACE = 3
+        LINE_COMMENT = 3
+        WHITESPACE = 4
 
     def _handle_get_identifier(self, contents : str, start : int, end : int) -> tuple[str, int]:
         i = start
@@ -316,68 +311,56 @@ class Preprocessor:
         except IndexError:
             self.conditionalSegment = None
 
-
     def handle_INCLUDE(self, contents : str, source):
-        # return None
-
         end = len(contents)
         if end > 0:
-            if contents in self.files:
-                text = self.files[contents]
-            else:
-                print(contents)
-                t = contents[0]
-                if t == '<':
-                    t = '>'
-                elif t != '"':
-                    raise Exception("Invalid include directive!")
+            include_type = contents[0]
+            if include_type == '<':
+                include_type = '>'
+            elif include_type != '"':
+                raise Exception("Invalid include directive!")
 
-                i = 1
-                while i < end:
-                    c = contents[i]
-                    if c == t:
-                        break
-                    i += 1
+            i = 1
+            while i < end:
+                c = contents[i]
+                if c == include_type:
+                    break
+                i += 1
 
-                name = contents[1:i]
-                split = name.rsplit('/', 1)
-                if len(split) > 1:
-                    name_dir = split[0]
-                    name_file = split[1]
-                else:
-                    name_dir = ""
-                    name_file = split[0]
+            (path_dir, path_file) = os.path.split(contents[1:i])
 
-                # find the file using the algorithm specified in the standard
-                # https://en.cppreference.com/w/c/preprocessor/include
-                file : str = None
-                for dir in self.include_dirs:
-                    path = os.path.join(dir, name_dir)
-                    for root, dir, files in os.walk(path):
-                        if name_file in files:
-                            file = os.path.join(root, name_file)
+            # find the file using the algorithm specified in the standard
+            # https://en.cppreference.com/w/c/preprocessor/include
+
+            file : str = None
+            if include_type == '"':
+                # Search in the directory of the current file
+                root = os.path.join(self.current_dir, path_dir)
+                if os.path.isdir(root):
+                    for item in os.listdir(root):
+                        if item == path_file:
+                            file = os.path.join(root, path_file)
                             break
 
-                if file == None:
-                    # TODO
-                    return FileNotFoundError("Included file doesn't exit!")
+            # Search in the standard include directories
+            for dir in self.include_dirs:
+                root = os.path.join(dir, path_dir)
+                if os.path.isdir(root):
+                    for item in os.listdir(root):
+                        if item == path_file:
+                            file = os.path.join(root, path_file)
+                            break
+                    if file != None:
+                        break
 
-                text = Path(file).read_text()
-                self.files[contents] = text
+            text = Path(file).read_text()
 
-            if self.recurse_includes:
-                cond_st = self.cond_st
-                inactive_level = self.inactive_level
+            current_dir = self.current_dir
+            self.current_dir = os.path.split(file)[0]
 
-                self.cond_st : deque[int] = deque()
-                self.inactive_level = 0
+            self.read_include(text)
 
-                self.read_include(text)
-
-                self.cond_st = cond_st
-                self.inactive_level = inactive_level
-            # else:
-                # self.top_level_includes.append()
+            self.current_dir = current_dir
 
             return None
 
@@ -429,10 +412,9 @@ class Preprocessor:
                     if self.inactive_level > 0:
                         self.inactive_level -= 1
                     else:
-                        # print("%s\nwith contents %s\nat %d, %d\n" % (dir, contents, line, pos))
-                        self.directives[dir](self, contents, ((line, pos), code))
+                        file = os.path.join(self.current_dir, self.current_file)
+                        self.directives[dir](self, contents, ((line, pos), CodeSource(file, line, pos)))
             else:
-                # print("%s\nwith contents %s\nat %d, %d\n" % (dir, contents, line, pos))
                 self.directives[dir](self, contents, ((line, pos), code))
         except KeyError:
             raise Exception("Invalid directive!")
@@ -470,13 +452,18 @@ class Preprocessor:
             tmp_buf_code = []
             while i < end:
                 c = code[i]
+                tmp_cont = False
                 if res == self.CodeSection.COMMENT:
-                    (tmp_section, i, line, pos) = self._read_COMMENT(code, i, end, c, tmp_buf_code, line, pos)
+                    (tmp_cont, tmp_section, i, line, pos) = self._read_COMMENT(code, i, end, c, tmp_buf_code, line, pos)
                 else:
                     (tmp_section, line, pos) = self._read_LINE_COMMENT(c, tmp_buf_code, line, pos)
 
                 if tmp_section != res:
                     break
+
+                if tmp_cont:
+                    continue
+
                 i += 1
         else:
             i = res
@@ -508,13 +495,15 @@ class Preprocessor:
                     buf += [c]
         return (cont, section, i, line, pos)
 
-    def _read_COMMENT(self, code: str, i : int, end : int, c : str, buf_code : list[str], line : int, pos : int) -> tuple[CodeSection, int, int, int]:
+    def _read_COMMENT(self, code: str, i : int, end : int, c : str, buf_code : list[str], line : int, pos : int) -> tuple[bool, CodeSection, int, int, int]:
         section = self.CodeSection.COMMENT
+        cont = False
         buf_code += [c]
         (is_newline, line, pos) = self._check_for_newline(c, line, pos)
         if c == '*':
             i += 1
             if i < end:
+                cont = True
                 c = code[i]
                 buf_code += [c]
                 (is_newline, line, pos) = self._check_for_newline(c, line, pos)
@@ -522,7 +511,7 @@ class Preprocessor:
                     # TODO Handle Comments
                     section = self.CodeSection.WHITESPACE
                     buf_code.clear()
-        return (section, i, line, pos)
+        return (cont, section, i, line, pos)
 
     def _read_LINE_COMMENT(self, c : str, buf_code : list[str], line : int, pos : int) -> tuple[CodeSection, int, int]:
         section = self.CodeSection.LINE_COMMENT
@@ -622,25 +611,31 @@ class Preprocessor:
         i = 0
         while i < end:
             c = code[i]
+            cont = False
             match section:
                 case self.CodeSection.DIRECTIVE:
                     (cont, section, i, line, pos) = self._read_DIRECTIVE(code, i, end, c, buf, buf_code, line, pos)
-                    if cont:
-                        continue
                 case self.CodeSection.COMMENT:
-                    (section, i, line, pos) = self._read_COMMENT(code, i, end, c, buf_code, line, pos)
+                    (cont, section, i, line, pos) = self._read_COMMENT(code, i, end, c, buf_code, line, pos)
                 case self.CodeSection.LINE_COMMENT:
                     (section, line, pos) = self._read_LINE_COMMENT(c, buf_code, line, pos)
                 case self.CodeSection.WHITESPACE:
                     (section, i, line, pos) = self._read_WHITESPACE(code, i, end, c, buf, buf_code, line, pos, False)
+
+            if cont:
+                continue
+
             i += 1
+        if section == self.CodeSection.DIRECTIVE:
+            self.handle_directive(''.join(buf), ''.join(buf_code), line, pos)
+            buf.clear()
+            buf_code.clear()
 
     def read(self, code : str) -> list[tuple[CodeSection, str, int, int]]:
         code = code.replace("\r\n", "\n")
 
         line = 1
         pos = 1
-        section_coords = SectionCoords(line, pos)
 
         brace_level = 0
         parentheses_level = 0
@@ -654,13 +649,12 @@ class Preprocessor:
         i = 0
         while i < end:
             c = code[i]
+            cont = False
             match section:
                 case self.CodeSection.DIRECTIVE:
                     (cont, section, i, line, pos) = self._read_DIRECTIVE(code, i, end, c, buf, buf_code, line, pos)
-                    if cont:
-                        continue
                 case self.CodeSection.COMMENT:
-                    (section, i, line, pos) = self._read_COMMENT(code, i, end, c, buf_code, line, pos)
+                    (cont, section, i, line, pos) = self._read_COMMENT(code, i, end, c, buf_code)
                 case self.CodeSection.LINE_COMMENT:
                     (section, line, pos) = self._read_LINE_COMMENT(c, buf_code, line, pos)
                 case self.CodeSection.WHITESPACE:
@@ -668,6 +662,8 @@ class Preprocessor:
                 case self.CodeSection.CODE:
                     (section, i, line, pos, brace_level, parentheses_level, func_def_state) = self._read_CODE(code, i, end, c, buf, buf_code, line, pos, brace_level, parentheses_level, func_def_state)
 
+            if cont:
+                continue
             i += 1
 
     def preprocess(self, code : str):
@@ -678,60 +674,8 @@ class Preprocessor:
         self.read_include(code)
         # self.files.clear()
 
-    def exec(self, file):
-        self.preprocess(Path(file).read_text())
-
-if __name__ == "__main__":
-    include_dirs = [
-        'mm',
-        'mm/include',# p = Preprocessor(include_dirs)
-
-        'mm/assets',
-    ]
-
-    # file = 'mm/src/code/z_message.c'
-    file = 'test/test.c'
-
-    p = Preprocessor(include_dirs)
-    # p.exec(file)
-
-    # # Macro test
-
-    # #define STR(X) #X
-    # p.add_FunctionMacro("STR", None, "#X", ["X"])
-    # #define STRX(X) STR(X)
-    # p.add_FunctionMacro("STRX", None, "STR(X)", ["X"])
-    # #define TEST4(_1, _2, _3) STRX(_1##_2) STR(_1##_2) STR(_2) STR(_1##_2 _1)
-    # test4 = p.add_FunctionMacro("TEST4", None, "STRX(_1##_2) STR(_1##_2) STR(_2) STR(_1##_2 _1)", ["_1", "_2", "_3"])
-
-    # #define BOOM (5)
-    # p.add_ObjectMacro("BOOM", None, "(521)")
-    # #define Bo 5
-    # p.add_ObjectMacro("BO", None, "5")
-    # #define OM 6
-    # p.add_ObjectMacro("OM", None, "6")
-
-    # # TEST4(  BO  , OM    BO     ,   OM  )
-    # m_1 = ObjectMacro.parse("  BO  ")
-    # m_2 = ObjectMacro.parse(" OM    BO     ")
-    # m_3 = ObjectMacro.parse("   OM  ")
-
-    # # "(521) 5" "BOOM BO" "6 5" "BOOM BO 5"
-    # print(ObjectMacro.contents_to_string(test4.solve([m_1, m_2, m_3])))
-
-
-    #ConstexprEvaluator test
-
-    # e = ConstexprEvaluator()
-    # val = e.eval(ObjectMacro.parse("(2 + 2 * 2) * 10 == 6 ? 10 : 7"))
-    # print(val)
-
-    # val = e.eval(ObjectMacro.parse("(1||0)"))
-    # print(val)
-
-    # Preprocessor test
-    p.exec(file)
-
-    print("WORKS" if ("MESSAGE_ITEM_NONE" in p.macros) else "DOESN'T WORK")
-
-    print("FINISHED")
+    def exec(self, path):
+        (dir, file) = os.path.split(path)
+        self.current_dir = dir
+        self.current_file = file
+        self.preprocess(Path(path).read_text())
