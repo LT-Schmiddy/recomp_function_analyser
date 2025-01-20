@@ -13,6 +13,14 @@ class FunctionDefState(IntEnum):
     WATCHING = 1
     INSIDE = 2
 
+class CodeSection(IntEnum):
+    DIRECTIVE = 0
+    CODE = 1
+    COMMENT = 2
+    LINE_COMMENT = 3
+    WHITESPACE = 4
+    
+
 class Preprocessor:
     forbidden_macro_names = {
         "defined"
@@ -81,13 +89,7 @@ class Preprocessor:
         DISABLED = 0
         ACTIVE = 1
         SKIP = 2
-
-    class CodeSection(IntEnum):
-        DIRECTIVE = 0
-        CODE = 1
-        COMMENT = 2
-        LINE_COMMENT = 3
-        WHITESPACE = 4
+        
 
     def _handle_get_identifier(self, contents : str, start : int, end : int) -> tuple[str, int]:
         i = start
@@ -435,16 +437,16 @@ class Preprocessor:
                 _c = code[i]
                 if _c == '*':
                     buf_code += [_c]
-                    return (True, self.CodeSection.COMMENT)
+                    return (True, CodeSection.COMMENT)
                 elif _c == '/':
                     buf_code += [_c]
-                    return (True, self.CodeSection.LINE_COMMENT)
+                    return (True, CodeSection.LINE_COMMENT)
                 buf += [c]
                 return (False, i)
         return (False, i)
 
     def _read_DIRECTIVE(self, code: str, i : int, end : int, c : str, buf : list[str], buf_code : list[str], line : int, pos : int) -> tuple[bool, CodeSection, int]:
-        section = self.CodeSection.DIRECTIVE
+        section = CodeSection.DIRECTIVE
         cont = False
         (is_comment, res) = self._check_for_comment_start(code, c, i, end, buf, buf_code)
         if is_comment:
@@ -453,7 +455,7 @@ class Preprocessor:
             while i < end:
                 c = code[i]
                 tmp_cont = False
-                if res == self.CodeSection.COMMENT:
+                if res == CodeSection.COMMENT:
                     (tmp_cont, tmp_section, i, line, pos) = self._read_COMMENT(code, i, end, c, tmp_buf_code, line, pos)
                 else:
                     (tmp_section, line, pos) = self._read_LINE_COMMENT(c, tmp_buf_code, line, pos)
@@ -474,7 +476,7 @@ class Preprocessor:
                 (is_newline, line, pos) = self._check_for_newline(c, line, pos)
                 if is_newline:
                     self.handle_directive(''.join(buf), ''.join(buf_code), line, pos)
-                    section = self.CodeSection.WHITESPACE
+                    section = CodeSection.WHITESPACE
                     buf.clear()
                     buf_code.clear()
                 elif c == '\\':
@@ -496,7 +498,7 @@ class Preprocessor:
         return (cont, section, i, line, pos)
 
     def _read_COMMENT(self, code: str, i : int, end : int, c : str, buf_code : list[str], line : int, pos : int) -> tuple[bool, CodeSection, int, int, int]:
-        section = self.CodeSection.COMMENT
+        section = CodeSection.COMMENT
         cont = False
         buf_code += [c]
         (is_newline, line, pos) = self._check_for_newline(c, line, pos)
@@ -509,22 +511,22 @@ class Preprocessor:
                 (is_newline, line, pos) = self._check_for_newline(c, line, pos)
                 if c == '/':
                     # TODO Handle Comments
-                    section = self.CodeSection.WHITESPACE
+                    section = CodeSection.WHITESPACE
                     buf_code.clear()
         return (cont, section, i, line, pos)
 
     def _read_LINE_COMMENT(self, c : str, buf_code : list[str], line : int, pos : int) -> tuple[CodeSection, int, int]:
-        section = self.CodeSection.LINE_COMMENT
+        section = CodeSection.LINE_COMMENT
         buf_code += [c]
         (is_newline, line, pos) = self._check_for_newline(c, line, pos)
         if is_newline:
             # TODO Handle Comments
-            section = self.CodeSection.WHITESPACE
+            section = CodeSection.WHITESPACE
             buf_code.clear()
         return (section, line, pos)
 
     def _read_WHITESPACE(self, code: str, i : int, end : int, c : str, buf : list[str], buf_code : list[str], line : int, pos : int, transition_to_code_allowed : bool) -> tuple[CodeSection, int, int, int]:
-        section = self.CodeSection.WHITESPACE
+        section = CodeSection.WHITESPACE
 
         tmp_buf = []
         tmp_buf_code = []
@@ -536,7 +538,7 @@ class Preprocessor:
             # Invalid code
             buf += tmp_buf
             buf_code += tmp_buf_code
-            section = self.CodeSection.CODE
+            section = CodeSection.CODE
         else:
             i = res
             if i < end:
@@ -545,17 +547,17 @@ class Preprocessor:
                 (is_newline, line, pos) = self._check_for_newline(c, line, pos)
                 if not is_newline:
                     if c == '#':
-                        section = self.CodeSection.DIRECTIVE
+                        section = CodeSection.DIRECTIVE
                         buf += tmp_buf + [c]
                         buf_code += tmp_buf_code + [c]
                     elif transition_to_code_allowed:
-                        section = self.CodeSection.CODE
+                        section = CodeSection.CODE
                         buf += tmp_buf + [c]
                         buf_code += tmp_buf_code + [c]
         return (section, i, line, pos)
 
     def _read_CODE(self, code: str, i : int, end : int, c : str, buf : list[str], buf_code : list[str], line : int, pos : int, brace_level: int, parentheses_level: int, func_def_state: FunctionDefState) -> tuple[CodeSection, int, int, int]:
-        section = self.CodeSection.CODE
+        section = CodeSection.CODE
 
         if i < end:
             c = code[i]
@@ -589,7 +591,7 @@ class Preprocessor:
             is_newline, line, pos = self._check_for_newline(c, line, pos)
             if not is_newline:
                 if (function_ended) or (c == ";" and brace_level == 0):
-                    section = self.CodeSection.WHITESPACE
+                    section = CodeSection.WHITESPACE
                     out_str = "".join(buf_code)
                     print("****\n" + out_str)
                     buf.clear()
@@ -606,27 +608,27 @@ class Preprocessor:
         buf : list[str] = []
         buf_code : list[str] = []
 
-        section = self.CodeSection.WHITESPACE
+        section = CodeSection.WHITESPACE
         end = len(code)
         i = 0
         while i < end:
             c = code[i]
             cont = False
             match section:
-                case self.CodeSection.DIRECTIVE:
+                case CodeSection.DIRECTIVE:
                     (cont, section, i, line, pos) = self._read_DIRECTIVE(code, i, end, c, buf, buf_code, line, pos)
-                case self.CodeSection.COMMENT:
+                case CodeSection.COMMENT:
                     (cont, section, i, line, pos) = self._read_COMMENT(code, i, end, c, buf_code, line, pos)
-                case self.CodeSection.LINE_COMMENT:
+                case CodeSection.LINE_COMMENT:
                     (section, line, pos) = self._read_LINE_COMMENT(c, buf_code, line, pos)
-                case self.CodeSection.WHITESPACE:
+                case CodeSection.WHITESPACE:
                     (section, i, line, pos) = self._read_WHITESPACE(code, i, end, c, buf, buf_code, line, pos, False)
 
             if cont:
                 continue
 
             i += 1
-        if section == self.CodeSection.DIRECTIVE:
+        if section == CodeSection.DIRECTIVE:
             self.handle_directive(''.join(buf), ''.join(buf_code), line, pos)
             buf.clear()
             buf_code.clear()
@@ -644,22 +646,22 @@ class Preprocessor:
         buf : list[str] = []
         buf_code : list[str] = []
 
-        section = self.CodeSection.WHITESPACE
+        section = CodeSection.WHITESPACE
         end = len(code)
         i = 0
         while i < end:
             c = code[i]
             cont = False
             match section:
-                case self.CodeSection.DIRECTIVE:
+                case CodeSection.DIRECTIVE:
                     (cont, section, i, line, pos) = self._read_DIRECTIVE(code, i, end, c, buf, buf_code, line, pos)
-                case self.CodeSection.COMMENT:
+                case CodeSection.COMMENT:
                     (cont, section, i, line, pos) = self._read_COMMENT(code, i, end, c, buf_code)
-                case self.CodeSection.LINE_COMMENT:
+                case CodeSection.LINE_COMMENT:
                     (section, line, pos) = self._read_LINE_COMMENT(c, buf_code, line, pos)
-                case self.CodeSection.WHITESPACE:
+                case CodeSection.WHITESPACE:
                     (section, i, line, pos) = self._read_WHITESPACE(code, i, end, c, buf, buf_code, line, pos, False)
-                case self.CodeSection.CODE:
+                case CodeSection.CODE:
                     (section, i, line, pos, brace_level, parentheses_level, func_def_state) = self._read_CODE(code, i, end, c, buf, buf_code, line, pos, brace_level, parentheses_level, func_def_state)
 
             if cont:
