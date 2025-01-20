@@ -16,7 +16,7 @@ class DoublyLinkedList(Generic[T]):
         self.begin : DoublyLinkedList.Node[T] = None
         self.end : DoublyLinkedList.Node[T] = None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         res = '['
         current = self.begin
         if current != None:
