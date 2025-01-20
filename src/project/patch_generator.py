@@ -72,7 +72,11 @@ class PatchGenerator:
         
     def scanner_and_cpreprocessor(self):
         for spec in self.config.process_specs:
-            p = Preprocessor([str(i) for i in self.config.includes], False)
-            p.read(spec.in_file.read_text())
+            p = Preprocessor([str(i) for i in self.config.includes], "mm/include/libc", False)
+            p.exec2(str(spec.in_file))
             
-            print(p.files.keys())
+            section = p.lookup_section(12, 28)
+            
+            print(section)
+            print(section.content)
+            print(section.code_content)
