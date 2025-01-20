@@ -9,7 +9,10 @@ from core.cpreprocessor import Preprocessor
 from core.macro import MacroSection, MacroExpression, MacroExpressionNode, Macro, ObjectMacro, FunctionMacro, VariadicMacro, MacroSource, ExternalSource, CodeSource
 from core.constexpr_evaluator import ConstexprEvaluator
 
+standard_c_lib_dir = "mm/include/libc" # I'm not sure if decomp uses compiler's standard C library
+
 def macro_test():
+    global standard_c_lib_dir
     print("\nMacro test")
 
     p = Preprocessor(include_dirs, standard_c_lib_dir)
@@ -47,6 +50,7 @@ def constexpr_evaluator_test():
     print(val)
 
 def preprocessor_test():
+    global standard_c_lib_dir
     print("\nPreprocessor test")
 
     p = Preprocessor(include_dirs, standard_c_lib_dir)
@@ -66,8 +70,6 @@ include_dirs = [
     'mm/include',
     'mm/assets',
 ]
-
-standard_c_lib_dir = "mm/include/libc" # I'm not sure if decomp uses compiler's standard C library
 
 file = 'mm/src/code/z_message.c'
 
