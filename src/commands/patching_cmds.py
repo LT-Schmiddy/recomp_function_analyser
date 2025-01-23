@@ -44,7 +44,6 @@ class PreprocessCommand(SubCommandBase):
 
     def setup_args(self):
         self.parser.add_argument('config_path', type=Path)
-        # self.parser.add_argument('--output', "-o", type=argparse.FileType('w', encoding='UTF-8'), default=None)
 
     def process(self, args: GeneratePatchCommandArgs) -> Any:
         new_config = ProjectConfig(args.config_path.parent, config_dict=json.loads(args.config_path.read_text()))
@@ -70,8 +69,7 @@ class GeneratePatchCommand(SubCommandBase):
         new_config = ProjectConfig(args.config_path.parent, config_dict=json.loads(args.config_path.read_text()))
         generator =  PatchGenerator(new_config)
         
-        # generator.includes_and_ast()
-        generator.scanner_and_cpreprocessor()
+        generator.process()
         
         return None
     

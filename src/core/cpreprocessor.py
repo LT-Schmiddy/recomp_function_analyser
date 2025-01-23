@@ -43,9 +43,13 @@ class Preprocessor:
     }
 
     tabsize = 4
+    
+    cond_st : deque[int]
     include_dirs : list[str]
     recurse_includes: bool
+    detected_includes: set[str]
     sections: dict[str, str]
+    macros : dict[str, Macro]
 
     def _add_predefined_macros(self):
         # TODO Implement
@@ -55,15 +59,14 @@ class Preprocessor:
         super().__init__()
 
         self.recurse_includes = recurse_includes
-        self.sections = {}
 
         self.include_dirs = []
         self.conditionalSegment = None
-        self.cond_st : deque[int] = deque()
+        self.cond_st = deque()
         self.inactive_level = 0
-        self.macros : dict[str, Macro] = {}
-        
-        self.sections: dict[str, StoredSection] = {}
+        self.macros = {}
+        self.detected_includes = set()
+        self.sections = {}
 
         self._add_predefined_macros()
 
@@ -332,6 +335,8 @@ class Preprocessor:
             self.conditionalSegment = None
 
     def handle_INCLUDE(self, contents : str, source):
+        self.detected_includes.add(contents)
+        
         end = len(contents)
         if end > 0:
             include_type = contents[0]
@@ -372,7 +377,7 @@ class Preprocessor:
                             break
                     if file != None:
                         break
-                    
+            
             if self.recurse_includes:
                 text = Path(file).read_text()
 
@@ -478,9 +483,9 @@ class Preprocessor:
                 c = code[i]
                 tmp_cont = False
                 if res == CodeSection.COMMENT:
-                    (tmp_cont, tmp_section, i, line, pos) = self._read_COMMENT(code, i, end, c, tmp_buf_code, line, pos)
+                    (tmp_cont, tmp_section, i, line, pos, clear_buf, clear_code_buf) = self._read_COMMENT(code, i, end, c, tmp_buf_code, line, pos)
                 else:
-                    (tmp_section, line, pos) = self._read_LINE_COMMENT(c, tmp_buf_code, line, pos)
+                    (tmp_section, line, pos, clear_buf, clear_code_buf) = self._read_LINE_COMMENT(c, tmp_buf_code, line, pos)
 
                 if tmp_section != res:
                     break
