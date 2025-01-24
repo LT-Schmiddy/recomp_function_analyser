@@ -31,25 +31,6 @@ class CreateConfigCommand(SubCommandBase):
         return None
     
 
-class PreprocessCommand(SubCommandBase):
-    name: str = "preprocess"
-    kwargs: dict = {
-        "aliases": ["p"],
-        "help": "Preprocesses code files from config."
-    }
-
-    class GeneratePatchCommandArgs(CommandProcessorArgs):
-        config_path: Path
-        output: io.TextIOWrapper
-
-    def setup_args(self):
-        self.parser.add_argument('config_path', type=Path)
-
-    def process(self, args: GeneratePatchCommandArgs) -> Any:
-        new_config = ProjectConfig(args.config_path.parent, config_dict=json.loads(args.config_path.read_text()))
-        new_config.preprocess()  
-
-
 class GeneratePatchCommand(SubCommandBase):
     name: str = "generate"
     kwargs: dict = {

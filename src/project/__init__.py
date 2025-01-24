@@ -47,7 +47,7 @@ class ProjectConfig:
         return {
             "local_macros": {
                 "PROJECT_ROOT": ".",
-                "DEFAULT_MODE": "analysis_only"
+                "DEFAULT_MODE": "basic_analysis_only"
             },
             "standard_c_lib_dir" : "",
             "includes": [
@@ -139,17 +139,4 @@ class ProjectConfig:
         print("Config Loaded.")
     # Processing:
 
-    def preprocess(self):
-        for i in self.process_specs:
-            output_path = i.out_file.with_suffix(".preproc" + i.out_file.suffix)
-
-            result = subprocess.run(
-                [str(self.preproc_command_path), str(i.in_file)]
-                + settings.current.preprocessing.default_flags
-                + self.preproc_flags
-                + [f"-I{i}" for i in self.includes]
-                + ["-o", str(output_path)],
-            )
-
-            return result.returncode
 
