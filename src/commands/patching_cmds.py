@@ -20,7 +20,7 @@ class CreateConfigCommand(SubCommandBase):
         output: io.TextIOWrapper
 
     def setup_args(self):
-        self.parser.add_argument('output', type=argparse.FileType('w', encoding='UTF-8'))
+        self.parser.add_argument('output', type=argparse.FileType('w', encoding='UTF-8'), help="Location to save the new config file.")
 
     def process(self, args: CreateConfigCommandArgs) -> Any:
         new_config = ProjectConfig.default_config_dict()
@@ -43,8 +43,7 @@ class GeneratePatchCommand(SubCommandBase):
         output: io.TextIOWrapper
 
     def setup_args(self):
-        self.parser.add_argument('config_path', type=Path)
-        self.parser.add_argument('--output', "-o", type=argparse.FileType('w', encoding='UTF-8'), default=None)
+        self.parser.add_argument('config_path', type=Path, help="Path of the config file to run. Paths within the config are relative to itself, not the working directory.")
 
     def process(self, args: GeneratePatchCommandArgs) -> Any:
         new_config = ProjectConfig(args.config_path.parent, config_dict=json.loads(args.config_path.read_text()))
