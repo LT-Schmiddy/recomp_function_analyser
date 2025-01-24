@@ -66,3 +66,4 @@ class SettingsCommand(SubCommandBase):
         
         # print(save_val)
         settings.current.set(args.attribute, save_val)
+        

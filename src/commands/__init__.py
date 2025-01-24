@@ -1,6 +1,7 @@
 import sys, os, argparse
 from typing import Any, Callable
 
+import version_info
 
 class SubCommandBase:
     # Class-wide variables. Used to create the sub-parser:
@@ -54,3 +55,19 @@ class CommandProcessorArgs(argparse.Namespace):
 # Importing all commands here:
 from .patching_cmds import *
 from .settings_cmds import *
+
+class VersionCommand(SubCommandBase):
+    name: str = "version"
+    kwargs: dict = {
+        "aliases": ["v"],
+        "help": "Print version information."
+    }
+
+    def setup_args(self):
+        pass
+
+    def process(self, args) -> Any:
+        print(version_info.name)
+        print(version_info.version_string)
+        return None
+    
