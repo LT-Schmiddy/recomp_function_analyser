@@ -166,43 +166,46 @@ class ConstexprEvaluator:
         t : MacroExpressionNode = None
         while current != None:
             (section, content) = current.val
-            if section == MacroSection.OPERATOR:
-                if content == '(':
-                    if parenth_level == 0:
-                        f = current.next
-                    parenth_level += 1
-                    constexpr.remove(current)
-                elif content == ')':
-                    parenth_level -= 1
-                    if parenth_level == 0:
-                        if f == current:
-                            raise Exception("Expected value in expression!")
-                        t = current.prev
-
-                        constexpr = constexpr.extract_list(f, t)
-                        current.val = (MacroSection.NUMBER, self._eval(constexpr))
-                    elif parenth_level < 0:
-                        raise Exception("Invalid expression!")
-                    else:
+            match section:
+                case MacroSection.OPERATOR:
+                    if content == '(':
+                        if parenth_level == 0:
+                            f = current.next
+                        parenth_level += 1
                         constexpr.remove(current)
-            elif section == MacroSection.NUMBER:
-                # TODO Support more number formats
-                num : int
-                try:
-                    num = int(content)
-                except ValueError:
-                    # Temporary solution for suffixes
-                    i = len(content)
-                    while i > 0:
-                        i -= 1
-                        c = content[i]
-                        if c.isdigit():
-                            break
-                    updated_content = content[0 : i + 1]
-                    num = int(updated_content)
-                current.val = (section, num)
-            elif section == MacroSection.WHITESPACE:
-                constexpr.remove(current)
+                    elif content == ')':
+                        parenth_level -= 1
+                        if parenth_level == 0:
+                            if f == current:
+                                raise Exception("Expected value in expression!")
+                            t = current.prev
+
+                            constexpr = constexpr.extract_list(f, t)
+                            current.val = (MacroSection.NUMBER, self._eval(constexpr))
+                        elif parenth_level < 0:
+                            raise Exception("Invalid expression!")
+                        else:
+                            constexpr.remove(current)
+                case MacroSection.NUMBER:
+                    # TODO Support more number formats
+                    num : int
+                    try:
+                        num = int(content)
+                    except ValueError:
+                        # Temporary solution for suffixes
+                        i = len(content)
+                        while i > 0:
+                            i -= 1
+                            c = content[i]
+                            if c.isdigit():
+                                break
+                        updated_content = content[0 : i + 1]
+                        num = int(updated_content)
+                    current.val = (section, num)
+                case MacroSection.WHITESPACE:
+                    constexpr.remove(current)
+                case MacroSection.NAME:
+                    current.val = (MacroSection.NUMBER, 0)
             current = current.next
 
     def _eval_detect_unary_plus_minus(self, constexpr : MacroExpression):
