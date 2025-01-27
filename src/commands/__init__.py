@@ -52,7 +52,7 @@ class CommandProcessorArgs(argparse.Namespace):
     subcommand: str
     process_func: Callable
 
-# Importing all commands here:
+# Importing and declaring all commands here:
 from .patching_cmds import *
 from .settings_cmds import *
 
