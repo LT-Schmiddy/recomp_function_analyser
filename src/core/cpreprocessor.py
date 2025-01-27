@@ -607,6 +607,7 @@ class Preprocessor:
 
                 (is_newline, line, line_start) = self._check_for_newline(c, i, line, line_start)
                 if not is_newline:
+                    code_section_end = False
                     match c:
                         case '{':
                             brace_level += 1
@@ -615,8 +616,7 @@ class Preprocessor:
                         case '}':
                             brace_level -= 1
                             if func_def_state == FunctionDefState.INSIDE and brace_level == 0:
-                                func_def_state = FunctionDefState.OUTSIDE
-                                section = CodeSection.WHITESPACE
+                                code_section_end = True
                         case '(':
                             parentheses_level += 1
                         case ')':
@@ -625,11 +625,16 @@ class Preprocessor:
                             parentheses_level -= 1
                         case ';':
                             if brace_level == 0:
-                                section = CodeSection.WHITESPACE
+                                code_section_end = True
                         case _:
                             if not c.isspace() and func_def_state == FunctionDefState.WATCHING:
                                 func_def_state = FunctionDefState.OUTSIDE
+                                print(''.join(buf_code))
                                 raise Exception("Invalid C syntax!")
+
+                    if code_section_end:
+                        func_def_state = FunctionDefState.OUTSIDE
+                        section = CodeSection.WHITESPACE
 
         return (section, i, line, line_start, brace_level, parentheses_level, func_def_state)
 
