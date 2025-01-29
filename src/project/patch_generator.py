@@ -28,7 +28,7 @@ class PatchGenerator:
         self.config = config
         
     def process(self):
-        for spec in self.config.process_specs:
+        for name, spec in self.config.process_specs.items():
             if spec.mode in self.modes:
                 getattr(self, spec.mode)(spec)
             else:

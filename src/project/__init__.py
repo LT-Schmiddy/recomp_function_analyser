@@ -40,7 +40,7 @@ class ProjectConfig:
                 "out_file": str(self.out_file),
             }
 
-    process_specs: list[FileSpec]
+    process_specs: dict[str, FileSpec]
 
     @classmethod
     def default_config_dict(cls):
@@ -63,15 +63,15 @@ class ProjectConfig:
                 "-D_LANGUAGE_C",
                 "-DMIPS",
             ],
-            "process_specs": [
-                {
+            "process_specs": {
+                'test' : {
                     "in_file": "test_file.c",
                     "functions": ["TestFuncName"],
                     "mode": "${DEFAULT_MODE}",
                     "preprocess": True,
                     "out_file": "out_file.c",
-                }
-            ],
+                }   
+            }
         }
 
     @classmethod
@@ -82,7 +82,7 @@ class ProjectConfig:
             "includes": [],
             "preproc_command": "",
             "preproc_flags": [],
-            "process_specs": [],
+            "process_specs": {},
         }
 
     @property
@@ -126,16 +126,17 @@ class ProjectConfig:
         self.standard_c_lib_dir = load_dict["standard_c_lib_dir"]
         self.preproc_command = load_dict["preproc_command"]
         self.preproc_flags = load_dict["preproc_flags"]
-        self.process_specs = [
-            ProjectConfig.FileSpec(
+        self.process_specs = {}
+        
+        for name, i in load_dict["process_specs"].items():
+            self.process_specs[name] = ProjectConfig.FileSpec(
                 self.location.joinpath(i["in_file"]),
                 i["functions"],
                 i["mode"],
                 i["preprocess"],
                 self.location.joinpath(i["out_file"]),
             )
-            for i in load_dict["process_specs"]
-        ]
+            
         print("Config Loaded.")
     # Processing:
 
