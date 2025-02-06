@@ -48,7 +48,6 @@ class Preprocessor:
     include_dirs : list[str]
     recurse_includes: bool
     detected_includes: set[str]
-    sections: dict[str, str]
     macros : dict[str, Macro]
 
     def _add_predefined_macros(self):
@@ -66,7 +65,8 @@ class Preprocessor:
         self.inactive_level = 0
         self.macros = {}
         self.detected_includes = set()
-        self.sections = {}
+        self.sections : dict[str, StoredSection] = {}
+        self.include_graph : dict[str, set[str]]
 
         self._add_predefined_macros()
 
@@ -473,6 +473,7 @@ class Preprocessor:
 
         (is_comment, res) = self._check_for_comment_start(code, c, i, end, buf, buf_code)
         if is_comment:
+            i += 2
             tmp_section = res
             tmp_buf_code = []
             while i < end:
@@ -553,7 +554,6 @@ class Preprocessor:
         tmp_buf_code = []
         (is_comment, res) = self._check_for_comment_start(code, c, i, end, tmp_buf, tmp_buf_code)
         if is_comment:
-            buf_code += tmp_buf_code
             section = res
         elif transition_to_code_allowed and len(buf) > 0:
             # Invalid code
@@ -565,8 +565,7 @@ class Preprocessor:
             if i < end:
                 c = code[i]
 
-                (is_newline, line, line_start) = self._check_for_newline(c, i, line, line_start)
-                if not is_newline:
+                if not c.isspace():
                     if c == '#':
                         section = CodeSection.DIRECTIVE
                         buf += tmp_buf + [c]
@@ -575,6 +574,8 @@ class Preprocessor:
                         section = CodeSection.CODE
                         buf += tmp_buf + [c]
                         buf_code += tmp_buf_code + [c]
+                else:
+                    (is_newline, line, line_start) = self._check_for_newline(c, i, line, line_start)
         return (section, i, line, line_start)
 
     def _read_CODE(self, code: str, i : int, end : int, c : str, buf : list[str], buf_code : list[str], line : int, line_start : int, brace_level: int, parentheses_level: int, func_def_state: FunctionDefState) -> tuple[CodeSection, int, int, int]:
@@ -582,6 +583,7 @@ class Preprocessor:
 
         (is_comment, res) = self._check_for_comment_start(code, c, i, end, buf, buf_code)
         if is_comment:
+            i += 2
             tmp_section = res
             while i < end:
                 c = code[i]
